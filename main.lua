@@ -2629,7 +2629,13 @@ function love.update(dt)
         character.y = nextY
 
         local nextOverlapArea = getCharacterFurnitureOverlapAreaAt(character.x, character.y)
-        if nextOverlapArea > 0 and nextOverlapArea >= previousOverlapArea - 0.01 then
+        -- 계단에서 내려온 직후처럼 이미 충돌 영역과 조금 겹친 상태에서는
+        -- 겹침을 더 키우는 이동만 막습니다. 같은 깊이의 좌우 이동이나
+        -- 충돌 영역 밖으로 빠져나가는 이동까지 막으면 투명벽에 갇힙니다.
+        local enteredNewCollision = previousOverlapArea <= 0.01 and nextOverlapArea > 0.01
+        local movedDeeperIntoCollision = previousOverlapArea > 0.01
+            and nextOverlapArea > previousOverlapArea + 0.01
+        if enteredNewCollision or movedDeeperIntoCollision then
             character.x = previousX
             character.y = previousY
             character.isMovingToTarget = false
