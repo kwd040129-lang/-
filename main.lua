@@ -235,8 +235,10 @@ local furnitureLibrary = {
             minDepthScale = 0.65,
             maxDepthScale = 0.92,
             visualHeightScale = 1.0,
-            collisionInsetX = 0.12,
-            collisionTopPadding = 0.78,
+            -- 캐릭터 충돌은 발 중심 기준이므로 냉장고 본체보다 좌우로
+            -- 조금 넓혀야 몸통이 이미지 안에 반쯤 들어간 뒤 막히지 않습니다.
+            collisionInsetX = -0.16,
+            collisionTopPadding = 0.62,
             collisionBottomPadding = 0.02,
             blocksMovement = true,
             renderBehind = false
