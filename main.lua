@@ -266,6 +266,8 @@ local stairAction = {
     startY = 0,
     elapsed = 0,
     duration = 0.42,
+    landingDuration = 0.20,
+    landingElapsed = 0,
     jumpHeight = 34,
     onTop = false
 }
@@ -819,10 +821,14 @@ local function beginStairHop(stepIndex)
     end
 
     stairAction.phase = "hop"
+    stairAction.onTop = false
     stairAction.stepIndex = stepIndex
     stairAction.startX = character.x
     stairAction.startY = character.y
     stairAction.elapsed = 0
+    stairAction.landingElapsed = 0
+    character.isLanded = false
+    character.fallTargetY = nil
     sprite.currentFrame = 1
 end
 
@@ -839,6 +845,7 @@ local function startStairClimb(item)
     stairAction.item = item
     stairAction.stepIndex = 0
     stairAction.elapsed = 0
+    stairAction.landingElapsed = 0
     stairAction.waypoints = {
         {x = firstStepX, y = geometry.lowTopY - character.height},
         {x = secondStepX, y = geometry.highTopY - character.height}
@@ -928,6 +935,27 @@ local function updateStairAction(dt)
         if ratio >= 1 then
             character.x = waypoint.x
             character.y = waypoint.y
+            -- 발바닥을 현재 발판 윗면에 정확히 고정하고 잠시 착지한 뒤
+            -- 다음 단으로 이동합니다. 이 동안 방 바닥 낙하는 적용되지 않습니다.
+            stairAction.phase = "land"
+            stairAction.onTop = true
+            stairAction.landingElapsed = 0
+            character.isLanded = true
+            character.fallTargetY = waypoint.y
+            sprite.isMovingByKeyboard = false
+            setCurrentAnimation("front")
+        end
+    elseif stairAction.phase == "land" then
+        local waypoint = stairAction.waypoints[stairAction.stepIndex]
+        character.x = waypoint.x
+        character.y = waypoint.y
+        character.isLanded = true
+        character.fallTargetY = waypoint.y
+        sprite.isMovingByKeyboard = false
+        setCurrentAnimation("front")
+
+        stairAction.landingElapsed = stairAction.landingElapsed + dt
+        if stairAction.landingElapsed >= stairAction.landingDuration then
             beginStairHop(stairAction.stepIndex + 1)
         end
     end
