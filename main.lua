@@ -677,19 +677,6 @@ local function getFurnitureSizeButtonRects(item)
     }
 end
 
-local function getFurnitureClimbButtonRect(item)
-    local bounds = getFurnitureVisualBounds(item)
-    local scale = math.max(0.5, bounds.scale)
-    local width = 68 / scale
-    local height = 24 / scale
-    return {
-        x = bounds.x,
-        y = bounds.y + bounds.height + 6 / scale,
-        width = width,
-        height = height
-    }
-end
-
 local function setFurnitureWidth(item, newWidth)
     if not item then
         return
@@ -856,6 +843,38 @@ local function startStairClimb(item)
     character.movePath = nil
     character.isLanded = true
     character.fallTargetY = nil
+end
+
+local function tryStartAutomaticStairClimb(moveX, moveY)
+    if stairAction.active
+        or stairAction.onTop
+        or character.isDragging
+        or moveX <= 0.35
+        or math.abs(moveY) > 0.70 then
+        return false
+    end
+
+    local characterBounds = getCharacterVisualBounds()
+
+    for _, item in ipairs(placedFurniture) do
+        if item.id == "stairs" then
+            local geometry = getStairGeometry(item)
+            local bounds = geometry.bounds
+            local gapToFirstStep = bounds.x - (characterBounds.x + characterBounds.width)
+            local laneTolerance = math.max(24, bounds.height * 0.15)
+            local isBesideFirstStep = characterBounds.footX < bounds.x
+                and gapToFirstStep >= -4
+                and gapToFirstStep <= math.max(20, bounds.width * 0.10)
+            local isAtFloorLane = math.abs(characterBounds.footY - geometry.frontY) <= laneTolerance
+
+            if isBesideFirstStep and isAtFloorLane then
+                startStairClimb(item)
+                return true
+            end
+        end
+    end
+
+    return false
 end
 
 local function updateStairAction(dt)
@@ -2168,18 +2187,6 @@ function love.mousepressed(windowX, windowY, button)
         if furnitureEdit.selectedItem then
             local deleteRect = getFurnitureDeleteButtonRect(furnitureEdit.selectedItem)
             local sizeRects = getFurnitureSizeButtonRects(furnitureEdit.selectedItem)
-            local climbRect = furnitureEdit.selectedItem.id == "stairs"
-                and getFurnitureClimbButtonRect(furnitureEdit.selectedItem)
-                or nil
-
-            if climbRect and isPointInsideRect(pointerX, pointerY, climbRect) then
-                local stair = furnitureEdit.selectedItem
-                furnitureEdit.selectedItem = nil
-                furnitureEdit.isSizing = false
-                furnitureDrag.item = nil
-                startStairClimb(stair)
-                return
-            end
 
             if isPointInsideRect(pointerX, pointerY, deleteRect) then
                 removePlacedFurniture(furnitureEdit.selectedItem)
@@ -2416,6 +2423,13 @@ function love.update(dt)
             targetMoveX = deltaX / distance
             targetMoveY = deltaY / distance
         end
+    end
+
+    local intendedMoveX = moveX ~= 0 and moveX or targetMoveX
+    local intendedMoveY = moveY ~= 0 and moveY or targetMoveY
+    if tryStartAutomaticStairClimb(intendedMoveX, intendedMoveY) then
+        updateCamera(dt, false)
+        return
     end
 
     sprite.isMovingByKeyboard = moveX ~= 0 or moveY ~= 0 or targetMoveX ~= 0 or targetMoveY ~= 0
@@ -3067,7 +3081,6 @@ local function drawFurnitureEditControls()
     local bounds = getFurnitureVisualBounds(item)
     local deleteRect = getFurnitureDeleteButtonRect(item)
     local sizeRects = getFurnitureSizeButtonRects(item)
-    local climbRect = item.id == "stairs" and getFurnitureClimbButtonRect(item) or nil
 
     love.graphics.setLineWidth(2)
     love.graphics.setColor(1, 0.12, 0.10, 0.85)
@@ -3082,12 +3095,6 @@ local function drawFurnitureEditControls()
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.printf("-", sizeRects.minus.x, sizeRects.minus.y + sizeRects.minus.height * 0.16, sizeRects.minus.width, "center")
     love.graphics.printf("+", sizeRects.plus.x, sizeRects.plus.y + sizeRects.plus.height * 0.16, sizeRects.plus.width, "center")
-
-    if climbRect then
-        drawRoundedPanel(climbRect.x, climbRect.y, climbRect.width, climbRect.height, 6, {0.95, 0.53, 0.50, 0.96}, {1, 1, 1, 0.50})
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.printf("Climb", climbRect.x, climbRect.y + climbRect.height * 0.16, climbRect.width, "center")
-    end
 
     local textWidth = 96 / math.max(0.5, bounds.scale)
     local textHeight = 20 / math.max(0.5, bounds.scale)
