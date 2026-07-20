@@ -612,10 +612,12 @@ local function getStairGeometry(item)
     local splitX = bounds.x + bounds.width * 0.48
     local lowTopY = bounds.y + bounds.height * 0.48
     local highTopY = bounds.y + bounds.height * 0.08
-    local depthBand = math.max(10, bounds.height * 0.09)
-    -- 화면의 아래쪽이 방의 앞쪽입니다. 충돌 띠를 계단 바닥선 중심에
-    -- 놓으면 투명벽이 앞쪽으로 튀어나오므로 전체를 뒤쪽으로 이동합니다.
-    local collisionFrontY = bounds.footY - depthBand * 0.35
+    -- 계단 뒤에는 캐릭터 한 명의 발 깊이보다 넉넉한 충돌 구역을 둡니다.
+    -- 이 구역이 캐릭터가 계단 몸체 안까지 내려오는 것을 막아, 뒤로
+    -- 지나갈 때 다리가 계단 아래로 튀어나오는 현상을 방지합니다.
+    local depthBand = math.max(32, bounds.height * 0.28)
+    -- 화면 아래쪽이 앞쪽이므로 앞 경계도 계단 바닥선보다 위에 둡니다.
+    local collisionFrontY = bounds.footY - bounds.height * 0.04
     local collisionBackY = collisionFrontY - depthBand
 
     return {
