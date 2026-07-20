@@ -173,6 +173,7 @@ local chat = {
     backspaceRepeatTimer = 0,
     backspaceRepeatStarted = false,
     portraitShowHistory = false,
+    orientationBeforeOpen = nil,
     isSending = false,
     threadErrorShown = false,
     thread = nil,
@@ -1503,6 +1504,8 @@ local function addChatMessage(role, text)
 end
 
 local function openChatWindow()
+    chat.orientationBeforeOpen = currentOrientation
+
     if currentOrientation == "landscape" then
         toggleOrientation()
     end
@@ -1526,6 +1529,12 @@ local function closeChatWindow()
     chat.backspaceRepeatStarted = false
     chat.portraitShowHistory = false
     love.keyboard.setTextInput(false)
+
+    if chat.orientationBeforeOpen and currentOrientation ~= chat.orientationBeforeOpen then
+        toggleOrientation()
+    end
+
+    chat.orientationBeforeOpen = nil
 end
 
 local function deleteLastChatCharacter()
