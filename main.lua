@@ -68,6 +68,7 @@ local character = {
     baseFallSpeed = 900,
     fallSpeed = 900,
     maxFallSpeed = 1800,
+    stairLift = 0,
     moveSpeed = 175,
     isMovingToTarget = false,
     targetX = 0,
@@ -264,12 +265,14 @@ local stairAction = {
     waypoints = nil,
     startX = 0,
     startY = 0,
+    startLift = 0,
     elapsed = 0,
     duration = 0.42,
     landingDuration = 0.20,
     landingElapsed = 0,
     jumpHeight = 34,
-    onTop = false
+    onTop = false,
+    awaitRelease = false
 }
 
 local floorArea = {
@@ -491,7 +494,10 @@ local function getCharacterVisualBounds()
     local visualWidth = character.width * depthScale
     local visualHeight = character.height * depthScale
     local footX = character.x + character.width * 0.5
-    local footY = character.y + character.height
+    -- 방 안의 깊이 위치(character.y)와 계단 위의 수직 높이를 분리합니다.
+    -- 깊이 배율은 바닥 위치로 계산하되 그림만 발판 높이만큼 위로 올립니다.
+    local groundFootY = character.y + character.height
+    local footY = groundFootY - (character.stairLift or 0)
 
     return {
         x = footX - visualWidth * 0.5,
@@ -500,6 +506,7 @@ local function getCharacterVisualBounds()
         height = visualHeight,
         footX = footX,
         footY = footY,
+        groundFootY = groundFootY,
         scale = depthScale
     }
 end
@@ -542,6 +549,8 @@ end
 -- 빈 바닥을 누르면 캐릭터의 발 위치가 그 지점으로 가도록 목표를 설정합니다.
 local function setMoveTarget(pointerX, pointerY)
     stairAction.onTop = false
+    stairAction.awaitRelease = false
+    character.stairLift = 0
     character.fallTargetY = nil
     local destinationX = clamp(pointerX - character.width * 0.5, 0, roomWorldWidth - character.width)
     local destinationY = clamp(pointerY - character.height, getMinCharacterFloorY(), getFloorY())
@@ -813,6 +822,7 @@ local function beginStairHop(stepIndex)
         stairAction.active = false
         stairAction.phase = nil
         stairAction.onTop = true
+        stairAction.awaitRelease = true
         character.isLanded = true
         character.fallTargetY = character.y
         sprite.isMovingByKeyboard = false
@@ -825,6 +835,7 @@ local function beginStairHop(stepIndex)
     stairAction.stepIndex = stepIndex
     stairAction.startX = character.x
     stairAction.startY = character.y
+    stairAction.startLift = character.stairLift or 0
     stairAction.elapsed = 0
     stairAction.landingElapsed = 0
     character.isLanded = false
@@ -841,14 +852,23 @@ local function startStairClimb(item)
 
     stairAction.active = true
     stairAction.onTop = false
+    stairAction.awaitRelease = false
     stairAction.phase = "approach"
     stairAction.item = item
     stairAction.stepIndex = 0
     stairAction.elapsed = 0
     stairAction.landingElapsed = 0
     stairAction.waypoints = {
-        {x = firstStepX, y = geometry.lowTopY - character.height},
-        {x = secondStepX, y = geometry.highTopY - character.height}
+        {
+            x = firstStepX,
+            lift = math.max(0, floorFootY - geometry.lowTopY),
+            surfaceY = geometry.lowTopY
+        },
+        {
+            x = secondStepX,
+            lift = math.max(0, floorFootY - geometry.highTopY),
+            surfaceY = geometry.highTopY
+        }
     }
     stairAction.approachX = clamp(approachX, 0, roomWorldWidth - character.width)
     stairAction.approachY = clamp(floorFootY - character.height, getMinCharacterFloorY(), getWorldFloorY())
@@ -857,6 +877,7 @@ local function startStairClimb(item)
     character.movePath = nil
     character.isLanded = true
     character.fallTargetY = nil
+    character.stairLift = 0
 end
 
 local function tryStartAutomaticStairClimb(moveX, moveY)
@@ -927,30 +948,34 @@ local function updateStairAction(dt)
         local smoothRatio = ratio * ratio * (3 - 2 * ratio)
         local arcHeight = math.sin(ratio * math.pi) * stairAction.jumpHeight
         character.x = stairAction.startX + (waypoint.x - stairAction.startX) * smoothRatio
-        character.y = stairAction.startY + (waypoint.y - stairAction.startY) * smoothRatio - arcHeight
+        character.y = stairAction.startY
+        character.stairLift = stairAction.startLift
+            + (waypoint.lift - stairAction.startLift) * smoothRatio
+            + arcHeight
         sprite.isMovingByKeyboard = false
         setCurrentAnimation("front")
         sprite.currentFrame = 1
 
         if ratio >= 1 then
             character.x = waypoint.x
-            character.y = waypoint.y
+            character.y = stairAction.startY
+            character.stairLift = waypoint.lift
             -- 발바닥을 현재 발판 윗면에 정확히 고정하고 잠시 착지한 뒤
             -- 다음 단으로 이동합니다. 이 동안 방 바닥 낙하는 적용되지 않습니다.
             stairAction.phase = "land"
             stairAction.onTop = true
             stairAction.landingElapsed = 0
             character.isLanded = true
-            character.fallTargetY = waypoint.y
+            character.fallTargetY = character.y
             sprite.isMovingByKeyboard = false
             setCurrentAnimation("front")
         end
     elseif stairAction.phase == "land" then
         local waypoint = stairAction.waypoints[stairAction.stepIndex]
         character.x = waypoint.x
-        character.y = waypoint.y
+        character.stairLift = waypoint.lift
         character.isLanded = true
-        character.fallTargetY = waypoint.y
+        character.fallTargetY = character.y
         sprite.isMovingByKeyboard = false
         setCurrentAnimation("front")
 
@@ -2271,6 +2296,8 @@ function love.mousepressed(windowX, windowY, button)
             character.fallTargetY = character.y
             character.isDragging = true
             stairAction.onTop = false
+            stairAction.awaitRelease = false
+            character.stairLift = 0
             character.isMovingToTarget = false
             character.isLanded = false
             character.fallSpeed = character.baseFallSpeed
@@ -2435,7 +2462,21 @@ function love.update(dt)
     local targetMoveX = 0
     local targetMoveY = 0
 
+    -- 오르기 키를 계속 누르고 있어도 정상에 도착하자마자 바닥으로
+    -- 이탈하지 않게, 한 번 키를 놓을 때까지 계단 위 착지를 유지합니다.
+    if stairAction.awaitRelease then
+        if moveX == 0 and moveY == 0 then
+            stairAction.awaitRelease = false
+        else
+            moveX = 0
+            moveY = 0
+        end
+    end
+
     if moveX ~= 0 or moveY ~= 0 then
+        if stairAction.onTop then
+            character.stairLift = 0
+        end
         stairAction.onTop = false
         character.isMovingToTarget = false
         character.fallTargetY = nil
