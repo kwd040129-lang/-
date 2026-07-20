@@ -627,6 +627,10 @@ local function getStairGeometry(item)
     local splitX = bounds.x + bounds.width * (680 / 1436)
     local lowTopY = bounds.y + bounds.height * (475 / 1095)
     local highTopY = bounds.y + bounds.height * (249 / 1095)
+    -- 캐릭터 발은 발판의 맨 위 윤곽선이 아니라 노란 상판 안쪽,
+    -- 분홍색 테두리 바로 위까지 내려와야 자연스럽게 겹쳐 보입니다.
+    local lowStandY = bounds.y + bounds.height * (600 / 1095)
+    local highStandY = bounds.y + bounds.height * (385 / 1095)
     local baseY = bounds.y + bounds.height * (854 / 1095)
     -- 계단 뒤에는 캐릭터 한 명의 발 깊이보다 넉넉한 충돌 구역을 둡니다.
     -- 이 구역이 캐릭터가 계단 몸체 안까지 내려오는 것을 막아, 뒤로
@@ -643,6 +647,8 @@ local function getStairGeometry(item)
         splitX = splitX,
         lowTopY = lowTopY,
         highTopY = highTopY,
+        lowStandY = lowStandY,
+        highStandY = highStandY,
         baseY = baseY,
         backY = collisionBackY,
         frontY = collisionFrontY,
@@ -846,8 +852,6 @@ end
 local function startStairClimb(item)
     local geometry = getStairGeometry(item)
     local floorFootY = geometry.baseY + 3
-    -- 신발 끝이 발판 테두리 안으로 조금 들어가야 떠 보이지 않습니다.
-    local footInset = clamp(geometry.bounds.height * 0.018, 2, 5)
     local approachX = geometry.bodyLeftX - character.width * 0.5
     local firstStepX = (geometry.bodyLeftX + geometry.splitX) * 0.5 - character.width * 0.5
     local secondStepX = (geometry.splitX + geometry.bodyRightX) * 0.5 - character.width * 0.5
@@ -863,13 +867,13 @@ local function startStairClimb(item)
     stairAction.waypoints = {
         {
             x = firstStepX,
-            lift = math.max(0, floorFootY - (geometry.lowTopY + footInset)),
-            surfaceY = geometry.lowTopY + footInset
+            lift = math.max(0, floorFootY - geometry.lowStandY),
+            surfaceY = geometry.lowStandY
         },
         {
             x = secondStepX,
-            lift = math.max(0, floorFootY - (geometry.highTopY + footInset)),
-            surfaceY = geometry.highTopY + footInset
+            lift = math.max(0, floorFootY - geometry.highStandY),
+            surfaceY = geometry.highStandY
         }
     }
     stairAction.approachX = clamp(approachX, 0, roomWorldWidth - character.width)
