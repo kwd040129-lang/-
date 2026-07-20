@@ -888,10 +888,23 @@ end
 
 local function tryStartAutomaticStairClimb(moveX, moveY)
     if stairAction.active
-        or stairAction.onTop
         or character.isDragging
         or moveX <= 0.35
         or math.abs(moveY) > 0.70 then
+        return false
+    end
+
+    -- 첫 번째 발판에 서 있다면 새 접근 동작 없이 두 번째 단만 오릅니다.
+    -- 첫 착지 때 설정된 awaitRelease가 해제된 뒤의 새 이동 입력만 받습니다.
+    if stairAction.onTop then
+        if stairAction.stepIndex == 1
+            and stairAction.item
+            and not stairAction.awaitRelease then
+            stairAction.active = true
+            beginStairHop(2)
+            return true
+        end
+
         return false
     end
 
@@ -987,7 +1000,16 @@ local function updateStairAction(dt)
 
         stairAction.landingElapsed = stairAction.landingElapsed + dt
         if stairAction.landingElapsed >= stairAction.landingDuration then
-            beginStairHop(stairAction.stepIndex + 1)
+            if stairAction.stepIndex == 1 then
+                -- 첫 단에서는 자동으로 다음 단을 오르지 않습니다. 이동키를
+                -- 놓았다가 계단 방향으로 다시 눌러야 두 번째 점프를 시작합니다.
+                stairAction.active = false
+                stairAction.phase = nil
+                stairAction.onTop = true
+                stairAction.awaitRelease = true
+            else
+                beginStairHop(stairAction.stepIndex + 1)
+            end
         end
     end
 
