@@ -2652,17 +2652,24 @@ local function drawPortraitCharacterChat()
     love.graphics.printf("X", closeRect.x, closeRect.y + 8, closeRect.width, "center")
 
     local reply = getLatestCharacterReply()
-    local bubbleX = 24
-    local bubbleY = 68
-    local bubbleWidth = virtualWidth - 48
-    local bubbleTextWidth = bubbleWidth - 28
     local font = love.graphics.getFont()
+    local characterHeight = 174
+    local characterBottom = inputRect.y - 16
+    local characterTop = characterBottom - characterHeight
+    local bubbleTailHeight = 14
+    local bubbleBottom = characterTop - bubbleTailHeight - 6
+    local maxBubbleWidth = virtualWidth - 56
+    local bubbleWidth = clamp(font:getWidth(reply) + 28, 120, maxBubbleWidth)
+    local bubbleTextWidth = bubbleWidth - 28
     local _, wrappedLines = font:getWrap(reply, bubbleTextWidth)
-    local bubbleHeight = clamp(#wrappedLines * font:getHeight() + 30, 68, 184)
+    local maxBubbleHeight = math.max(48, bubbleBottom - 62)
+    local bubbleHeight = clamp(#wrappedLines * font:getHeight() + 24, 48, maxBubbleHeight)
+    local bubbleX = (virtualWidth - bubbleWidth) * 0.5
+    local bubbleY = bubbleBottom - bubbleHeight
 
     drawRoundedPanel(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 14, {1, 1, 1, 0.98}, {0.42, 0.29, 0.22, 0.32})
     love.graphics.setColor(1, 1, 1, 0.98)
-    love.graphics.polygon("fill", virtualWidth * 0.5 - 12, bubbleY + bubbleHeight - 1, virtualWidth * 0.5 + 12, bubbleY + bubbleHeight - 1, virtualWidth * 0.5, bubbleY + bubbleHeight + 15)
+    love.graphics.polygon("fill", virtualWidth * 0.5 - 12, bubbleBottom - 1, virtualWidth * 0.5 + 12, bubbleBottom - 1, virtualWidth * 0.5, bubbleBottom + bubbleTailHeight)
 
     local oldScissorX, oldScissorY, oldScissorWidth, oldScissorHeight = love.graphics.getScissor()
     love.graphics.setScissor(
@@ -2679,7 +2686,7 @@ local function drawPortraitCharacterChat()
         love.graphics.setScissor()
     end
 
-    drawChatCharacterAt(virtualWidth * 0.5, inputRect.y - 16, 174)
+    drawChatCharacterAt(virtualWidth * 0.5, characterBottom, characterHeight)
 
     drawRoundedPanel(inputRect.x, inputRect.y, inputRect.width, inputRect.height, 8, {1, 1, 1, 0.96}, {0.35, 0.22, 0.14, 0.45})
     love.graphics.setColor(0.16, 0.12, 0.10, 1)
