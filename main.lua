@@ -233,7 +233,7 @@ local furnitureLibrary = {
             height = 168,
             minDepthScale = 0.62,
             maxDepthScale = 0.92,
-            visualHeightScale = 1.0,
+            visualHeightScale = 1.28,
             blocksMovement = false,
             renderBehind = true
         }
@@ -626,6 +626,19 @@ local function getFurnitureSizeButtonRects(item)
     return {
         minus = {x = minusX, y = y, width = buttonSize, height = buttonSize},
         plus = {x = plusX, y = y, width = buttonSize, height = buttonSize}
+    }
+end
+
+local function getFurnitureClimbButtonRect(item)
+    local bounds = getFurnitureVisualBounds(item)
+    local scale = math.max(0.5, bounds.scale)
+    local width = 68 / scale
+    local height = 24 / scale
+    return {
+        x = bounds.x,
+        y = bounds.y + bounds.height + 6 / scale,
+        width = width,
+        height = height
     }
 end
 
@@ -2087,6 +2100,18 @@ function love.mousepressed(windowX, windowY, button)
         if furnitureEdit.selectedItem then
             local deleteRect = getFurnitureDeleteButtonRect(furnitureEdit.selectedItem)
             local sizeRects = getFurnitureSizeButtonRects(furnitureEdit.selectedItem)
+            local climbRect = furnitureEdit.selectedItem.id == "stairs"
+                and getFurnitureClimbButtonRect(furnitureEdit.selectedItem)
+                or nil
+
+            if climbRect and isPointInsideRect(pointerX, pointerY, climbRect) then
+                local stair = furnitureEdit.selectedItem
+                furnitureEdit.selectedItem = nil
+                furnitureEdit.isSizing = false
+                furnitureDrag.item = nil
+                startStairClimb(stair)
+                return
+            end
 
             if isPointInsideRect(pointerX, pointerY, deleteRect) then
                 removePlacedFurniture(furnitureEdit.selectedItem)
@@ -2110,17 +2135,6 @@ function love.mousepressed(windowX, windowY, button)
 
         if isInsideViewport(viewX, viewY) and isInsideVirtualScreen(pointerX, pointerY) then
             clickedFurniture = findFurnitureAt(pointerX, pointerY)
-        end
-
-        if clickedFurniture and clickedFurniture.id == "stairs" then
-            local stairBounds = getFurnitureVisualBounds(clickedFurniture)
-            if pointerY <= stairBounds.y + stairBounds.height * 0.58 then
-                furnitureEdit.selectedItem = nil
-                furnitureEdit.isSizing = false
-                furnitureDrag.item = nil
-                startStairClimb(clickedFurniture)
-                return
-            end
         end
 
         if clickedFurniture then
@@ -2970,6 +2984,7 @@ local function drawFurnitureEditControls()
     local bounds = getFurnitureVisualBounds(item)
     local deleteRect = getFurnitureDeleteButtonRect(item)
     local sizeRects = getFurnitureSizeButtonRects(item)
+    local climbRect = item.id == "stairs" and getFurnitureClimbButtonRect(item) or nil
 
     love.graphics.setLineWidth(2)
     love.graphics.setColor(1, 0.12, 0.10, 0.85)
@@ -2984,6 +2999,12 @@ local function drawFurnitureEditControls()
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.printf("-", sizeRects.minus.x, sizeRects.minus.y + sizeRects.minus.height * 0.16, sizeRects.minus.width, "center")
     love.graphics.printf("+", sizeRects.plus.x, sizeRects.plus.y + sizeRects.plus.height * 0.16, sizeRects.plus.width, "center")
+
+    if climbRect then
+        drawRoundedPanel(climbRect.x, climbRect.y, climbRect.width, climbRect.height, 6, {0.95, 0.53, 0.50, 0.96}, {1, 1, 1, 0.50})
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf("Climb", climbRect.x, climbRect.y + climbRect.height * 0.16, climbRect.width, "center")
+    end
 
     local textWidth = 96 / math.max(0.5, bounds.scale)
     local textHeight = 20 / math.max(0.5, bounds.scale)
