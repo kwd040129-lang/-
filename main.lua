@@ -238,7 +238,7 @@ local furnitureLibrary = {
             collisionTopPadding = 0.62,
             collisionBottomPadding = 0.22,
             blocksMovement = true,
-            renderBehind = true
+            renderBehind = false
         }
     }
 }
@@ -268,7 +268,8 @@ local stairAction = {
     startY = 0,
     elapsed = 0,
     duration = 0.42,
-    jumpHeight = 34
+    jumpHeight = 34,
+    onTop = false
 }
 
 local floorArea = {
@@ -540,6 +541,7 @@ end
 
 -- 빈 바닥을 누르면 캐릭터의 발 위치가 그 지점으로 가도록 목표를 설정합니다.
 local function setMoveTarget(pointerX, pointerY)
+    stairAction.onTop = false
     character.fallTargetY = nil
     local destinationX = clamp(pointerX - character.width * 0.5, 0, roomWorldWidth - character.width)
     local destinationY = clamp(pointerY - character.height, getMinCharacterFloorY(), getFloorY())
@@ -770,6 +772,7 @@ local function beginStairHop(stepIndex)
     if not waypoint then
         stairAction.active = false
         stairAction.phase = nil
+        stairAction.onTop = true
         character.isLanded = true
         character.fallTargetY = character.y
         sprite.isMovingByKeyboard = false
@@ -793,6 +796,7 @@ local function startStairClimb(item)
     local secondStepX = bounds.x + bounds.width * 0.69 - character.width * 0.5
 
     stairAction.active = true
+    stairAction.onTop = false
     stairAction.phase = "approach"
     stairAction.item = item
     stairAction.stepIndex = 0
@@ -2191,6 +2195,7 @@ function love.mousepressed(windowX, windowY, button)
             character.dragShadowFootY = bounds.footY
             character.fallTargetY = character.y
             character.isDragging = true
+            stairAction.onTop = false
             character.isMovingToTarget = false
             character.isLanded = false
             character.fallSpeed = character.baseFallSpeed
@@ -2356,6 +2361,7 @@ function love.update(dt)
     local targetMoveY = 0
 
     if moveX ~= 0 or moveY ~= 0 then
+        stairAction.onTop = false
         character.isMovingToTarget = false
         character.fallTargetY = nil
     elseif character.isMovingToTarget then
@@ -2664,7 +2670,7 @@ local function drawSortedWorldObjects()
     else
         table.insert(drawItems, {
             kind = "character",
-            depthY = characterBounds.footY
+            depthY = (stairAction.active or stairAction.onTop) and math.huge or characterBounds.footY
         })
     end
 
