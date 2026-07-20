@@ -624,7 +624,11 @@ local function getStairGeometry(item)
     -- 불투명 픽셀 영역(원본 1436x1095에서 측정)을 계단으로 사용합니다.
     local bodyLeftX = bounds.x + bounds.width * (185 / 1436)
     local bodyRightX = bounds.x + bounds.width * (1251 / 1436)
-    local splitX = bounds.x + bounds.width * (680 / 1436)
+    local splitRatio = 680 / 1436
+    if item.flipX then
+        splitRatio = 1 - splitRatio
+    end
+    local splitX = bounds.x + bounds.width * splitRatio
     local lowTopY = bounds.y + bounds.height * (475 / 1095)
     local highTopY = bounds.y + bounds.height * (249 / 1095)
     -- 캐릭터 발은 발판의 맨 위 윤곽선이 아니라 노란 상판 안쪽,
@@ -645,6 +649,7 @@ local function getStairGeometry(item)
         bodyLeftX = bodyLeftX,
         bodyRightX = bodyRightX,
         splitX = splitX,
+        ascendingDirection = item.flipX and -1 or 1,
         lowTopY = lowTopY,
         highTopY = highTopY,
         lowStandY = lowStandY,
@@ -699,6 +704,19 @@ local function getFurnitureSizeButtonRects(item)
     return {
         minus = {x = minusX, y = y, width = buttonSize, height = buttonSize},
         plus = {x = plusX, y = y, width = buttonSize, height = buttonSize}
+    }
+end
+
+local function getFurnitureFlipButtonRect(item)
+    local bounds = getFurnitureVisualBounds(item)
+    local scale = math.max(0.5, bounds.scale)
+    local width = 58 / scale
+    local height = 24 / scale
+    return {
+        x = bounds.x,
+        y = bounds.y - height - 6 / scale,
+        width = width,
+        height = height
     }
 end
 
@@ -798,7 +816,8 @@ local function addFurnitureToRoom(libraryItem)
         collisionBottomPadding = libraryItem.collisionBottomPadding,
         wallMounted = libraryItem.wallMounted,
         blocksMovement = libraryItem.blocksMovement,
-        renderBehind = libraryItem.renderBehind
+        renderBehind = libraryItem.renderBehind,
+        flipX = false
     }
 
     clampFurnitureToRoom(placedItem)
@@ -852,9 +871,16 @@ end
 local function startStairClimb(item)
     local geometry = getStairGeometry(item)
     local floorFootY = geometry.baseY + 3
-    local approachX = geometry.bodyLeftX - character.width * 0.5
-    local firstStepX = (geometry.bodyLeftX + geometry.splitX) * 0.5 - character.width * 0.5
-    local secondStepX = (geometry.splitX + geometry.bodyRightX) * 0.5 - character.width * 0.5
+    local approachFootX = item.flipX and geometry.bodyRightX or geometry.bodyLeftX
+    local lowCenterX = item.flipX
+        and (geometry.splitX + geometry.bodyRightX) * 0.5
+        or (geometry.bodyLeftX + geometry.splitX) * 0.5
+    local highCenterX = item.flipX
+        and (geometry.bodyLeftX + geometry.splitX) * 0.5
+        or (geometry.splitX + geometry.bodyRightX) * 0.5
+    local approachX = approachFootX - character.width * 0.5
+    local firstStepX = lowCenterX - character.width * 0.5
+    local secondStepX = highCenterX - character.width * 0.5
 
     stairAction.active = true
     stairAction.onTop = false
@@ -889,7 +915,6 @@ end
 local function tryStartAutomaticStairClimb(moveX, moveY)
     if stairAction.active
         or character.isDragging
-        or moveX <= 0.35
         or math.abs(moveY) > 0.70 then
         return false
     end
@@ -897,9 +922,11 @@ local function tryStartAutomaticStairClimb(moveX, moveY)
     -- 첫 번째 발판에 서 있다면 새 접근 동작 없이 두 번째 단만 오릅니다.
     -- 첫 착지 때 설정된 awaitRelease가 해제된 뒤의 새 이동 입력만 받습니다.
     if stairAction.onTop then
+        local climbDirection = stairAction.item and getStairGeometry(stairAction.item).ascendingDirection or 1
         if stairAction.stepIndex == 1
             and stairAction.item
-            and not stairAction.awaitRelease then
+            and not stairAction.awaitRelease
+            and moveX * climbDirection > 0.35 then
             stairAction.active = true
             beginStairHop(2)
             return true
@@ -914,16 +941,20 @@ local function tryStartAutomaticStairClimb(moveX, moveY)
         if item.id == "stairs" then
             local geometry = getStairGeometry(item)
             local bounds = geometry.bounds
-            local footDistanceToFirstStep = geometry.bodyLeftX - characterBounds.footX
+            local climbDirection = geometry.ascendingDirection
+            local lowOuterEdgeX = item.flipX and geometry.bodyRightX or geometry.bodyLeftX
+            local footDistanceToFirstStep = (lowOuterEdgeX - characterBounds.footX) * climbDirection
             local laneTolerance = math.max(24, bounds.height * 0.15)
             local approachDistance = math.max(56, characterBounds.width * 0.78)
             local edgeAllowance = math.max(8, bounds.width * 0.035)
-            local isBesideFirstStep = characterBounds.footX <= geometry.bodyLeftX + edgeAllowance
+            local isMovingUpStairs = moveX * climbDirection > 0.35
+            local isBesideFirstStep = characterBounds.footX * climbDirection
+                    <= lowOuterEdgeX * climbDirection + edgeAllowance
                 and footDistanceToFirstStep >= -edgeAllowance
                 and footDistanceToFirstStep <= approachDistance
             local isAtFloorLane = math.abs(characterBounds.footY - geometry.baseY) <= laneTolerance
 
-            if isBesideFirstStep and isAtFloorLane then
+            if isMovingUpStairs and isBesideFirstStep and isAtFloorLane then
                 startStairClimb(item)
                 return true
             end
@@ -2277,6 +2308,18 @@ function love.mousepressed(windowX, windowY, button)
         if furnitureEdit.selectedItem then
             local deleteRect = getFurnitureDeleteButtonRect(furnitureEdit.selectedItem)
             local sizeRects = getFurnitureSizeButtonRects(furnitureEdit.selectedItem)
+            local flipRect = furnitureEdit.selectedItem.id == "stairs"
+                and getFurnitureFlipButtonRect(furnitureEdit.selectedItem)
+                or nil
+
+            if flipRect and isPointInsideRect(pointerX, pointerY, flipRect) then
+                furnitureEdit.selectedItem.flipX = not furnitureEdit.selectedItem.flipX
+                stairAction.active = false
+                stairAction.onTop = false
+                stairAction.awaitRelease = false
+                character.stairLift = 0
+                return
+            end
 
             if isPointInsideRect(pointerX, pointerY, deleteRect) then
                 removePlacedFurniture(furnitureEdit.selectedItem)
@@ -2744,7 +2787,11 @@ local function drawFurnitureItem(item)
         love.graphics.setShader(chromaKeyShader)
     end
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(item.image, bounds.x, bounds.y, 0, scaleX, scaleY)
+    if item.flipX then
+        love.graphics.draw(item.image, bounds.x + bounds.width, bounds.y, 0, -scaleX, scaleY)
+    else
+        love.graphics.draw(item.image, bounds.x, bounds.y, 0, scaleX, scaleY)
+    end
     if useChromaKey then
         love.graphics.setShader()
     end
@@ -3204,6 +3251,7 @@ local function drawFurnitureEditControls()
     local bounds = getFurnitureVisualBounds(item)
     local deleteRect = getFurnitureDeleteButtonRect(item)
     local sizeRects = getFurnitureSizeButtonRects(item)
+    local flipRect = item.id == "stairs" and getFurnitureFlipButtonRect(item) or nil
 
     love.graphics.setLineWidth(2)
     love.graphics.setColor(1, 0.12, 0.10, 0.85)
@@ -3218,6 +3266,12 @@ local function drawFurnitureEditControls()
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.printf("-", sizeRects.minus.x, sizeRects.minus.y + sizeRects.minus.height * 0.16, sizeRects.minus.width, "center")
     love.graphics.printf("+", sizeRects.plus.x, sizeRects.plus.y + sizeRects.plus.height * 0.16, sizeRects.plus.width, "center")
+
+    if flipRect then
+        drawRoundedPanel(flipRect.x, flipRect.y, flipRect.width, flipRect.height, 6, {0.95, 0.53, 0.50, 0.96}, {1, 1, 1, 0.50})
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf("Flip", flipRect.x, flipRect.y + flipRect.height * 0.16, flipRect.width, "center")
+    end
 
     local textWidth = 96 / math.max(0.5, bounds.scale)
     local textHeight = 20 / math.max(0.5, bounds.scale)
