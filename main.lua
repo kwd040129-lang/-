@@ -142,6 +142,11 @@ local sprite = {
 local chromaKeyShader = nil
 local chromaKeyShaderReady = false
 local roomBackgroundImage = nil
+local windowViews = {
+    day = {fileName = "furniture/window_views/day.png", image = nil},
+    sunset = {fileName = "furniture/window_views/sunset.png", image = nil},
+    night = {fileName = "furniture/window_views/night.png", image = nil}
+}
 
 local backgroundLibrary = {
     folder = "room_backgrounds",
@@ -1072,6 +1077,29 @@ local function loadFurnitureLibrary()
     end
 end
 
+local function loadWindowViews()
+    for _, view in pairs(windowViews) do
+        view.image = nil
+        if love.filesystem.getInfo(view.fileName) then
+            local success, imageOrError = pcall(love.graphics.newImage, view.fileName)
+            if success then
+                view.image = imageOrError
+                view.image:setFilter("linear", "linear")
+            end
+        end
+    end
+end
+
+local function getCurrentWindowView()
+    local hour = tonumber(os.date("%H")) or 12
+    if hour >= 6 and hour < 17 then
+        return windowViews.day.image
+    elseif hour >= 17 and hour < 20 then
+        return windowViews.sunset.image
+    end
+    return windowViews.night.image
+end
+
 local function loadRoomBackground(backgroundPath)
     local imagePath = backgroundPath or backgroundLibrary.activePath
 
@@ -1829,6 +1857,7 @@ function love.load()
     -- 좌우 스프라이트 이미지와 셰이더를 먼저 준비합니다.
     loadAllAnimations()
     loadFurnitureLibrary()
+    loadWindowViews()
     loadBackgroundLibrary()
     loadRoomBackground()
     loadChromaKeyShader()
@@ -2325,22 +2354,45 @@ local function drawFurnitureItem(item)
     local scaleX = bounds.width / item.image:getWidth()
     local scaleY = bounds.height / item.image:getHeight()
 
-    love.graphics.draw(item.image, bounds.x, bounds.y, 0, scaleX, scaleY)
-end
+    if item.id == "window" then
+        local viewImage = getCurrentWindowView()
+        if viewImage then
+            -- The green panes occupy this normalized rectangle in window.png.
+            -- Draw the outdoor scene behind it; the frame drawn below covers the divider.
+            local paneX = bounds.x + bounds.width * 0.234
+            local paneY = bounds.y + bounds.height * 0.217
+            local paneWidth = bounds.width * 0.533
+            local paneHeight = bounds.height * 0.645
+            local coverScale = math.max(paneWidth / viewImage:getWidth(), paneHeight / viewImage:getHeight())
+            local viewWidth = viewImage:getWidth() * coverScale
+            local viewHeight = viewImage:getHeight() * coverScale
+            local viewX = paneX + (paneWidth - viewWidth) * 0.5
+            local viewY = paneY + (paneHeight - viewHeight) * 0.5
 
-local function drawPlacedFurniture()
+            love.graphics.setShader()
+            love.graphics.stencil(function()
+                love.graphics.rectangle("fill", paneX, paneY, paneWidth, paneHeight)
+            end, "replace", 1)
+            love.graphics.setStencilTest("greater", 0)
+            love.graphics.setColor(1, 1, 1, 1)
+            love.graphics.draw(viewImage, viewX, viewY, 0, coverScale, coverScale)
+            love.graphics.setStencilTest()
+        end
+    end
+
     if chromaKeyShaderReady then
         love.graphics.setShader(chromaKeyShader)
     end
-
     love.graphics.setColor(1, 1, 1, 1)
-
-    for _, item in ipairs(placedFurniture) do
-        drawFurnitureItem(item)
-    end
-
+    love.graphics.draw(item.image, bounds.x, bounds.y, 0, scaleX, scaleY)
     if chromaKeyShaderReady then
         love.graphics.setShader()
+    end
+end
+
+local function drawPlacedFurniture()
+    for _, item in ipairs(placedFurniture) do
+        drawFurnitureItem(item)
     end
 end
 
@@ -2448,16 +2500,7 @@ local function drawSortedWorldObjects()
         elseif entry.kind == "character_shadow" then
             drawCharacterShadow()
         elseif entry.kind == "furniture" then
-            if chromaKeyShaderReady then
-                love.graphics.setShader(chromaKeyShader)
-            end
-
-            love.graphics.setColor(1, 1, 1, 1)
             drawFurnitureItem(entry.item)
-
-            if chromaKeyShaderReady then
-                love.graphics.setShader()
-            end
         end
     end
 
