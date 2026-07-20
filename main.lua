@@ -225,6 +225,23 @@ local furnitureLibrary = {
             renderBehind = true
         },
         {
+            id = "refrigerator",
+            label = "Refrigerator",
+            fileName = "furniture/refrigerator.png",
+            image = nil,
+            isLoaded = false,
+            width = 125,
+            height = 198,
+            minDepthScale = 0.65,
+            maxDepthScale = 0.92,
+            visualHeightScale = 1.0,
+            collisionInsetX = 0.12,
+            collisionTopPadding = 0.78,
+            collisionBottomPadding = 0.02,
+            blocksMovement = true,
+            renderBehind = false
+        },
+        {
             id = "stairs",
             label = "2-Step Stairs",
             fileName = "furniture/stairs.png",
@@ -1824,9 +1841,9 @@ end
 
 local function getFurnitureItemLayout()
     return {
-        width = 180,
+        width = 130,
         height = 132,
-        gap = 16
+        gap = 12
     }
 end
 
