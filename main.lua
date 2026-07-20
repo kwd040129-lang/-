@@ -1351,10 +1351,21 @@ local function getChatCloseRect()
     local rect = getChatWindowRect()
 
     if currentOrientation == "portrait" then
-        return {x = rect.width - 48, y = 14, width = 34, height = 34}
+        return {x = rect.width - 56, y = 10, width = 42, height = 42}
     end
 
     return {x = rect.x + rect.width - 42, y = rect.y + 10, width = 30, height = 30}
+end
+
+local function getChatCloseHitRect()
+    local rect = getChatCloseRect()
+    local padding = currentOrientation == "portrait" and 12 or 6
+    return {
+        x = rect.x - padding,
+        y = rect.y - padding,
+        width = rect.width + padding * 2,
+        height = rect.height + padding * 2
+    }
 end
 
 local function getChatInputRect()
@@ -1656,7 +1667,7 @@ end
 
 local function handleUiMousePressed(virtualX, virtualY)
     if ui.isChatOpen then
-        if isPointInsideRect(virtualX, virtualY, getChatCloseRect()) then
+        if isPointInsideRect(virtualX, virtualY, getChatCloseHitRect()) then
             closeChatWindow()
         elseif currentOrientation == "portrait" and isPointInsideRect(virtualX, virtualY, getChatHistoryToggleRect()) then
             chat.portraitShowHistory = not chat.portraitShowHistory
