@@ -164,6 +164,7 @@ local ui = {
 
 local chat = {
     input = "",
+    composition = "",
     messages = {},
     isSending = false,
     threadErrorShown = false,
@@ -171,6 +172,8 @@ local chat = {
     requestChannel = nil,
     responseChannel = nil
 }
+
+local koreanUiFont = nil
 
 local furnitureLibrary = {
     selectedIndex = 1,
@@ -1470,11 +1473,13 @@ local function openChatWindow()
     ui.isChatOpen = true
     ui.isMenuOpen = false
     ui.isInteriorOpen = false
+    chat.composition = ""
     love.keyboard.setTextInput(true)
 end
 
 local function closeChatWindow()
     ui.isChatOpen = false
+    chat.composition = ""
     love.keyboard.setTextInput(false)
 end
 
@@ -1486,6 +1491,7 @@ local function sendChatMessage()
 
     addChatMessage("user", message)
     chat.input = ""
+    chat.composition = ""
     chat.isSending = true
     chat.requestChannel:push(message)
 end
@@ -1666,6 +1672,28 @@ local function handleUiMousePressed(virtualX, virtualY)
 end
 
 -- 게임이 처음 시작될 때 한 번 실행됩니다.
+local function loadKoreanUiFont()
+    local fontPaths = {
+        "C:/Windows/Fonts/malgun.ttf",
+        "C:/Windows/Fonts/malgunsl.ttf"
+    }
+
+    for _, fontPath in ipairs(fontPaths) do
+        local file = io.open(fontPath, "rb")
+        if file then
+            local contents = file:read("*a")
+            file:close()
+            local fileData = love.filesystem.newFileData(contents, "korean_ui_font.ttf")
+            local success, font = pcall(love.graphics.newFont, fileData, 15)
+            if success then
+                koreanUiFont = font
+                love.graphics.setFont(koreanUiFont)
+                return
+            end
+        end
+    end
+end
+
 function love.load()
     chat.requestChannel = love.thread.getChannel("chat_requests")
     chat.responseChannel = love.thread.getChannel("chat_responses")
@@ -1673,6 +1701,7 @@ function love.load()
     chat.responseChannel:clear()
     chat.thread = love.thread.newThread("chat_worker.lua")
     chat.thread:start()
+    loadKoreanUiFont()
 
     -- PC 테스트용 가로 모드 기준 창 크기로 시작합니다.
     love.window.setMode(virtualWidth, virtualHeight, {
@@ -1718,6 +1747,9 @@ function love.keypressed(key)
         elseif key == "return" or key == "kpenter" then
             sendChatMessage()
         elseif key == "backspace" then
+            if chat.composition ~= "" then
+                return
+            end
             local byteOffset = utf8.offset(chat.input, -1)
             if byteOffset then
                 chat.input = chat.input:sub(1, byteOffset - 1)
@@ -1756,6 +1788,13 @@ end
 function love.textinput(text)
     if ui.isChatOpen and not chat.isSending and #chat.input < 1000 then
         chat.input = chat.input .. text
+        chat.composition = ""
+    end
+end
+
+function love.textedited(text, start, length)
+    if ui.isChatOpen and not chat.isSending then
+        chat.composition = text or ""
     end
 end
 
@@ -2385,7 +2424,8 @@ local function drawChatWindow()
 
     drawRoundedPanel(inputRect.x, inputRect.y, inputRect.width, inputRect.height, 7, {1, 1, 1, 0.90}, {0.35, 0.22, 0.14, 0.45})
     love.graphics.setColor(0.16, 0.12, 0.10, 1)
-    local inputText = chat.input ~= "" and chat.input or "Type a message..."
+    local visibleInput = chat.input .. chat.composition
+    local inputText = visibleInput ~= "" and visibleInput or "Type a message..."
     love.graphics.printf(inputText, inputRect.x + 10, inputRect.y + 10, inputRect.width - 20, "left")
 
     local sendColor = chat.isSending and {0.55, 0.52, 0.50, 0.75} or {0.95, 0.53, 0.50, 0.96}
