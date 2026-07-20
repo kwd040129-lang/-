@@ -1512,12 +1512,21 @@ local function openChatWindow()
         isLanded = character.isLanded,
         fallTargetY = character.fallTargetY,
         fallSpeed = character.fallSpeed,
-        isMovingToTarget = character.isMovingToTarget,
+        isMovingToTarget = false,
         targetX = character.targetX,
         targetY = character.targetY,
-        movePath = character.movePath,
-        movePathIndex = character.movePathIndex
+        movePath = nil,
+        movePathIndex = 1
     }
+
+    -- 채팅을 여는 순간 진행 중인 이동을 취소하고 현재 위치에 멈춥니다.
+    character.isMovingToTarget = false
+    character.movePath = nil
+    character.movePathIndex = 1
+    sprite.isMovingByKeyboard = false
+    sprite.currentAnimation = "front"
+    sprite.currentFrame = 1
+    sprite.timer = 0
 
     if currentOrientation == "landscape" then
         toggleOrientation()
