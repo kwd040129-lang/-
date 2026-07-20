@@ -2662,7 +2662,7 @@ local function drawSortedWorldObjects()
     local drawItems = {}
     local characterBounds = getCharacterVisualBounds()
     local characterDepthY = (stairAction.active or stairAction.onTop) and math.huge or characterBounds.footY
-    local characterOcclusionBottom = nil
+    local characterOccluders = {}
 
     if character.isDragging then
         table.insert(drawItems, {
@@ -2680,20 +2680,13 @@ local function drawSortedWorldObjects()
         local bounds = getFurnitureVisualBounds(item)
         local furnitureDepthY = item.renderBehind and -math.huge or bounds.footY
 
-        if item.blocksMovement ~= false
+        if item.id == "stairs"
+            and item.blocksMovement ~= false
             and characterDepthY < furnitureDepthY
             and characterBounds.x < bounds.x + bounds.width
             and characterBounds.x + characterBounds.width > bounds.x
             and characterBounds.y < bounds.y + bounds.height then
-            -- A side-view stair is a tall foreground silhouette. When the
-            -- character passes behind it, clip at the first tread rather than
-            -- at the transparent image bottom so detached legs cannot appear.
-            local occlusionLine = item.id == "stairs"
-                and (bounds.y + bounds.height * 0.48)
-                or (bounds.y + bounds.height)
-            characterOcclusionBottom = characterOcclusionBottom
-                and math.min(characterOcclusionBottom, occlusionLine)
-                or occlusionLine
+            table.insert(characterOccluders, bounds)
         end
 
         table.insert(drawItems, {
@@ -2709,21 +2702,35 @@ local function drawSortedWorldObjects()
 
     for _, entry in ipairs(drawItems) do
         if entry.kind == "character" then
-            if characterOcclusionBottom then
-                local clipVirtualY = (characterOcclusionBottom - camera.y) * camera.zoom + virtualHeight * 0.5
-                local oldX, oldY, oldWidth, oldHeight = love.graphics.getScissor()
-                love.graphics.setScissor(
-                    screen.offsetX,
-                    screen.offsetY,
-                    virtualWidth * screen.scale,
-                    clamp(clipVirtualY, 0, virtualHeight) * screen.scale
-                )
+            if #characterOccluders > 0 then
+                -- 계단의 실제 L자 실루엣에 해당하는 부분만 가립니다. 화면 전체를
+                -- 수평으로 자르면 계단 옆의 캐릭터까지 머리만 남는 문제가 생깁니다.
+                love.graphics.stencil(function()
+                    for _, bounds in ipairs(characterOccluders) do
+                        local splitX = bounds.x + bounds.width * 0.48
+                        local lowTreadY = bounds.y + bounds.height * 0.48
+                        local maskBottom = roomWorldHeight + characterBounds.height
+
+                        love.graphics.rectangle(
+                            "fill",
+                            bounds.x,
+                            lowTreadY,
+                            splitX - bounds.x,
+                            maskBottom - lowTreadY
+                        )
+                        love.graphics.rectangle(
+                            "fill",
+                            splitX,
+                            bounds.y,
+                            bounds.x + bounds.width - splitX,
+                            maskBottom - bounds.y
+                        )
+                    end
+                end, "replace", 1, true)
+                love.graphics.setStencilTest("equal", 0)
+                drawCharacterShadow()
                 drawSpriteCharacter()
-                if oldX then
-                    love.graphics.setScissor(oldX, oldY, oldWidth, oldHeight)
-                else
-                    love.graphics.setScissor()
-                end
+                love.graphics.setStencilTest()
             else
                 drawCharacterShadow()
                 drawSpriteCharacter()
