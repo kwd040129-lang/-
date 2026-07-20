@@ -1,3 +1,5 @@
+local utf8 = require("utf8")
+
 -- LÖVE 2D 다마고치 캐릭터 테스트용 main.lua
 -- Tab 키로 세로 모드(450x800)와 가로 모드(800x450)를 전환합니다.
 -- 방향키로 캐릭터를 움직이고, 오른쪽으로 갈 때는 character_sheet_right.png를 사용합니다.
@@ -153,10 +155,21 @@ local backgroundLibrary = {
 local ui = {
     isMenuOpen = false,
     isInteriorOpen = false,
+    isChatOpen = false,
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
     isBackgroundListDragging = false,
     backgroundDragLastX = 0
+}
+
+local chat = {
+    input = "",
+    messages = {},
+    isSending = false,
+    threadErrorShown = false,
+    thread = nil,
+    requestChannel = nil,
+    responseChannel = nil
 }
 
 local furnitureLibrary = {
@@ -1297,6 +1310,42 @@ local function getInteriorButtonRect()
     }
 end
 
+local function getChatButtonRect()
+    return {
+        x = virtualWidth - 150,
+        y = 114,
+        width = 132,
+        height = 42
+    }
+end
+
+local function getChatWindowRect()
+    local width = math.min(520, virtualWidth - 40)
+    local height = math.min(350, virtualHeight - 80)
+
+    return {
+        x = (virtualWidth - width) * 0.5,
+        y = (virtualHeight - height) * 0.5,
+        width = width,
+        height = height
+    }
+end
+
+local function getChatCloseRect()
+    local rect = getChatWindowRect()
+    return {x = rect.x + rect.width - 42, y = rect.y + 10, width = 30, height = 30}
+end
+
+local function getChatInputRect()
+    local rect = getChatWindowRect()
+    return {x = rect.x + 16, y = rect.y + rect.height - 54, width = rect.width - 112, height = 38}
+end
+
+local function getChatSendRect()
+    local rect = getChatWindowRect()
+    return {x = rect.x + rect.width - 88, y = rect.y + rect.height - 54, width = 72, height = 38}
+end
+
 local function getInteriorWindowRect()
     return {
         x = 28,
@@ -1383,7 +1432,97 @@ local function selectBackgroundItem(index)
     previewRoomBackground(item.path)
 end
 
+local function decodeJsonStringField(json, fieldName)
+    local _, valueStart = json:find('"' .. fieldName .. '"%s*:%s*"')
+    if not valueStart then
+        return nil
+    end
+
+    local result = {}
+    local index = valueStart + 1
+
+    while index <= #json do
+        local characterByte = json:sub(index, index)
+        if characterByte == '"' then
+            return table.concat(result)
+        elseif characterByte == "\\" then
+            local escaped = json:sub(index + 1, index + 1)
+            local replacements = {n = "\n", r = "\r", t = "\t", b = "\b", f = "\f"}
+            table.insert(result, replacements[escaped] or escaped)
+            index = index + 2
+        else
+            table.insert(result, characterByte)
+            index = index + 1
+        end
+    end
+
+    return nil
+end
+
+local function addChatMessage(role, text)
+    table.insert(chat.messages, {role = role, text = text})
+    while #chat.messages > 20 do
+        table.remove(chat.messages, 1)
+    end
+end
+
+local function openChatWindow()
+    ui.isChatOpen = true
+    ui.isMenuOpen = false
+    ui.isInteriorOpen = false
+    love.keyboard.setTextInput(true)
+end
+
+local function closeChatWindow()
+    ui.isChatOpen = false
+    love.keyboard.setTextInput(false)
+end
+
+local function sendChatMessage()
+    local message = chat.input:match("^%s*(.-)%s*$")
+    if message == "" or chat.isSending or not chat.requestChannel then
+        return
+    end
+
+    addChatMessage("user", message)
+    chat.input = ""
+    chat.isSending = true
+    chat.requestChannel:push(message)
+end
+
+local function pollChatResponse()
+    if chat.thread and not chat.threadErrorShown then
+        local threadError = chat.thread:getError()
+        if threadError then
+            chat.threadErrorShown = true
+            chat.isSending = false
+            addChatMessage("system", "채팅 스레드 오류: " .. threadError)
+        end
+    end
+
+    if not chat.responseChannel then
+        return
+    end
+
+    local result = chat.responseChannel:pop()
+    if not result then
+        return
+    end
+
+    chat.isSending = false
+    local statusCode, body = result:match("^(%d+)%s*\n(.*)$")
+    local reply = body and decodeJsonStringField(body, "reply")
+
+    if statusCode == "200" and reply then
+        addChatMessage("assistant", reply)
+    else
+        local serverError = body and decodeJsonStringField(body, "error")
+        addChatMessage("system", serverError or "서버에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+    end
+end
+
 local function openInteriorWindow()
+    closeChatWindow()
     ui.isMenuOpen = false
     ui.isInteriorOpen = true
     ui.activeInteriorTab = "backgrounds"
@@ -1410,6 +1549,15 @@ local function closeInteriorWindow(shouldApply)
 end
 
 local function handleUiMousePressed(virtualX, virtualY)
+    if ui.isChatOpen then
+        if isPointInsideRect(virtualX, virtualY, getChatCloseRect()) then
+            closeChatWindow()
+        elseif isPointInsideRect(virtualX, virtualY, getChatSendRect()) then
+            sendChatMessage()
+        end
+        return true
+    end
+
     if ui.isInteriorOpen then
         local windowRect = getInteriorWindowRect()
         local confirmRect = {
@@ -1506,6 +1654,9 @@ local function handleUiMousePressed(virtualX, virtualY)
         if isPointInsideRect(virtualX, virtualY, getInteriorButtonRect()) then
             openInteriorWindow()
             return true
+        elseif isPointInsideRect(virtualX, virtualY, getChatButtonRect()) then
+            openChatWindow()
+            return true
         end
 
         ui.isMenuOpen = false
@@ -1516,6 +1667,13 @@ end
 
 -- 게임이 처음 시작될 때 한 번 실행됩니다.
 function love.load()
+    chat.requestChannel = love.thread.getChannel("chat_requests")
+    chat.responseChannel = love.thread.getChannel("chat_responses")
+    chat.requestChannel:clear()
+    chat.responseChannel:clear()
+    chat.thread = love.thread.newThread("chat_worker.lua")
+    chat.thread:start()
+
     -- PC 테스트용 가로 모드 기준 창 크기로 시작합니다.
     love.window.setMode(virtualWidth, virtualHeight, {
         resizable = true,
@@ -1554,6 +1712,20 @@ end
 
 -- 키보드를 눌렀을 때 실행됩니다.
 function love.keypressed(key)
+    if ui.isChatOpen then
+        if key == "escape" then
+            closeChatWindow()
+        elseif key == "return" or key == "kpenter" then
+            sendChatMessage()
+        elseif key == "backspace" then
+            local byteOffset = utf8.offset(chat.input, -1)
+            if byteOffset then
+                chat.input = chat.input:sub(1, byteOffset - 1)
+            end
+        end
+        return
+    end
+
     if love.keyboard.isDown("lctrl", "rctrl") and key == "c" then
         if furnitureEdit.isSizing and furnitureEdit.selectedItem then
             furnitureEdit.lastCopiedText = buildFurnitureClipboardText(furnitureEdit.selectedItem)
@@ -1581,6 +1753,12 @@ function love.keypressed(key)
 end
 
 -- 마우스 버튼을 눌렀을 때 실행됩니다.
+function love.textinput(text)
+    if ui.isChatOpen and not chat.isSending and #chat.input < 1000 then
+        chat.input = chat.input .. text
+    end
+end
+
 function love.mousepressed(windowX, windowY, button)
     if button == 1 then
         -- 실제 마우스 좌표를 현재 카메라가 적용된 월드 좌표로 변환합니다.
@@ -1734,6 +1912,8 @@ end
 
 -- 매 프레임마다 게임 상태를 갱신합니다.
 function love.update(dt)
+    pollChatResponse()
+
     if furnitureDrag.item then
         if love.mouse.isDown(1) then
             local windowX, windowY = love.mouse.getPosition()
@@ -2152,11 +2332,66 @@ local function drawDropdownMenu()
     end
 
     local rect = getInteriorButtonRect()
+    local chatRect = getChatButtonRect()
 
     drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8, {0.97, 0.93, 0.86, 0.94}, {0.35, 0.22, 0.14, 0.35})
 
     love.graphics.setColor(0.18, 0.12, 0.09, 1)
     love.graphics.printf("Interior", rect.x, rect.y + 12, rect.width, "center")
+
+    drawRoundedPanel(chatRect.x, chatRect.y, chatRect.width, chatRect.height, 8, {0.97, 0.93, 0.86, 0.94}, {0.35, 0.22, 0.14, 0.35})
+    love.graphics.setColor(0.18, 0.12, 0.09, 1)
+    love.graphics.printf("Chat", chatRect.x, chatRect.y + 12, chatRect.width, "center")
+end
+
+local function drawChatWindow()
+    if not ui.isChatOpen then
+        return
+    end
+
+    local rect = getChatWindowRect()
+    local closeRect = getChatCloseRect()
+    local inputRect = getChatInputRect()
+    local sendRect = getChatSendRect()
+
+    love.graphics.setColor(0, 0, 0, 0.48)
+    love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 12, {0.98, 0.95, 0.90, 0.98}, {0.35, 0.22, 0.14, 0.55})
+
+    love.graphics.setColor(0.18, 0.12, 0.09, 1)
+    love.graphics.print("Chat", rect.x + 18, rect.y + 18)
+    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7, {0.28, 0.22, 0.20, 0.16}, {0.30, 0.20, 0.16, 0.30})
+    love.graphics.setColor(0.18, 0.12, 0.09, 1)
+    love.graphics.printf("X", closeRect.x, closeRect.y + 7, closeRect.width, "center")
+
+    local firstMessage = math.max(1, #chat.messages - 3)
+    local messageY = rect.y + 54
+    for index = firstMessage, #chat.messages do
+        local message = chat.messages[index]
+        local label = message.role == "user" and "You" or (message.role == "assistant" and "Gemini" or "System")
+        local bubbleColor = message.role == "user" and {0.95, 0.70, 0.66, 0.34} or {1, 1, 1, 0.58}
+        drawRoundedPanel(rect.x + 16, messageY, rect.width - 32, 46, 7, bubbleColor, nil)
+        love.graphics.setColor(0.34, 0.19, 0.14, 1)
+        love.graphics.print(label .. ":", rect.x + 24, messageY + 6)
+        love.graphics.setColor(0.16, 0.12, 0.10, 1)
+        love.graphics.printf(message.text, rect.x + 78, messageY + 6, rect.width - 110, "left")
+        messageY = messageY + 50
+    end
+
+    if chat.isSending then
+        love.graphics.setColor(0.38, 0.28, 0.22, 0.8)
+        love.graphics.print("Gemini is typing...", rect.x + 18, inputRect.y - 22)
+    end
+
+    drawRoundedPanel(inputRect.x, inputRect.y, inputRect.width, inputRect.height, 7, {1, 1, 1, 0.90}, {0.35, 0.22, 0.14, 0.45})
+    love.graphics.setColor(0.16, 0.12, 0.10, 1)
+    local inputText = chat.input ~= "" and chat.input or "Type a message..."
+    love.graphics.printf(inputText, inputRect.x + 10, inputRect.y + 10, inputRect.width - 20, "left")
+
+    local sendColor = chat.isSending and {0.55, 0.52, 0.50, 0.75} or {0.95, 0.53, 0.50, 0.96}
+    drawRoundedPanel(sendRect.x, sendRect.y, sendRect.width, sendRect.height, 7, sendColor, {0.46, 0.16, 0.14, 0.34})
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf("Send", sendRect.x, sendRect.y + 10, sendRect.width, "center")
 end
 
 local function drawFurnitureEditControls()
@@ -2359,6 +2594,7 @@ local function drawUiLayer()
     drawMenuButton()
     drawDropdownMenu()
     drawInteriorWindow()
+    drawChatWindow()
 end
 
 local function drawFloorDebugLine()
