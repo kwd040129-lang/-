@@ -613,14 +613,18 @@ local function getStairGeometry(item)
     local lowTopY = bounds.y + bounds.height * 0.48
     local highTopY = bounds.y + bounds.height * 0.08
     local depthBand = math.max(10, bounds.height * 0.09)
+    -- 화면의 아래쪽이 방의 앞쪽입니다. 충돌 띠를 계단 바닥선 중심에
+    -- 놓으면 투명벽이 앞쪽으로 튀어나오므로 전체를 뒤쪽으로 이동합니다.
+    local collisionFrontY = bounds.footY - depthBand * 0.35
+    local collisionBackY = collisionFrontY - depthBand
 
     return {
         bounds = bounds,
         splitX = splitX,
         lowTopY = lowTopY,
         highTopY = highTopY,
-        backY = bounds.footY - depthBand,
-        frontY = bounds.footY + depthBand,
+        backY = collisionBackY,
+        frontY = collisionFrontY,
         depthBand = depthBand
     }
 end
