@@ -860,11 +860,12 @@ local function tryStartAutomaticStairClimb(moveX, moveY)
         if item.id == "stairs" then
             local geometry = getStairGeometry(item)
             local bounds = geometry.bounds
-            local gapToFirstStep = bounds.x - (characterBounds.x + characterBounds.width)
+            local footDistanceToFirstStep = bounds.x - characterBounds.footX
             local laneTolerance = math.max(24, bounds.height * 0.15)
+            local approachDistance = math.max(56, characterBounds.width * 0.78)
             local isBesideFirstStep = characterBounds.footX < bounds.x
-                and gapToFirstStep >= -4
-                and gapToFirstStep <= math.max(20, bounds.width * 0.10)
+                and footDistanceToFirstStep >= 0
+                and footDistanceToFirstStep <= approachDistance
             local isAtFloorLane = math.abs(characterBounds.footY - geometry.frontY) <= laneTolerance
 
             if isBesideFirstStep and isAtFloorLane then
