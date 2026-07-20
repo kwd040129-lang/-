@@ -143,9 +143,7 @@ local chromaKeyShader = nil
 local chromaKeyShaderReady = false
 local roomBackgroundImage = nil
 local windowViews = {
-    day = {fileName = "furniture/window_views/day.png", image = nil},
-    sunset = {fileName = "furniture/window_views/sunset.png", image = nil},
-    night = {fileName = "furniture/window_views/night.png", image = nil}
+    day = {fileName = "furniture/window_views/day.png", image = nil}
 }
 
 local backgroundLibrary = {
@@ -1091,13 +1089,9 @@ local function loadWindowViews()
 end
 
 local function getCurrentWindowView()
-    local hour = tonumber(os.date("%H")) or 12
-    if hour >= 6 and hour < 17 then
-        return windowViews.day.image
-    elseif hour >= 17 and hour < 20 then
-        return windowViews.sunset.image
-    end
-    return windowViews.night.image
+    -- Until matching sunset/night variants are ready, keep the approved
+    -- daytime sample visible at every hour instead of exposing the wall.
+    return windowViews.day.image
 end
 
 local function loadRoomBackground(backgroundPath)
