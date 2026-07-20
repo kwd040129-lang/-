@@ -222,6 +222,20 @@ local furnitureLibrary = {
             wallMounted = true,
             blocksMovement = false,
             renderBehind = true
+        },
+        {
+            id = "stairs",
+            label = "2-Step Stairs",
+            fileName = "furniture/stairs.png",
+            image = nil,
+            isLoaded = false,
+            width = 220,
+            height = 168,
+            minDepthScale = 0.62,
+            maxDepthScale = 0.92,
+            visualHeightScale = 1.0,
+            blocksMovement = false,
+            renderBehind = true
         }
     }
 }
@@ -239,6 +253,19 @@ local furnitureEdit = {
     minWidth = 90,
     maxWidth = 320,
     lastCopiedText = ""
+}
+
+local stairAction = {
+    active = false,
+    phase = nil,
+    item = nil,
+    stepIndex = 0,
+    waypoints = nil,
+    startX = 0,
+    startY = 0,
+    elapsed = 0,
+    duration = 0.42,
+    jumpHeight = 34
 }
 
 local floorArea = {
@@ -263,6 +290,9 @@ local floorDebug = {
 local clampCharacterToVirtualScreen
 local updateFallSpeedFromHeight
 local buildCharacterPath
+local updateSpriteAnimation
+local setCurrentAnimation
+local setAnimationFromMoveVector
 
 -- 숫자 value를 minValue와 maxValue 사이로 제한합니다.
 local function clamp(value, minValue, maxValue)
@@ -719,6 +749,101 @@ local function findFurnitureAt(worldX, worldY)
     return nil
 end
 
+local function beginStairHop(stepIndex)
+    local waypoint = stairAction.waypoints and stairAction.waypoints[stepIndex]
+    if not waypoint then
+        stairAction.active = false
+        stairAction.phase = nil
+        character.isLanded = true
+        character.fallTargetY = character.y
+        sprite.isMovingByKeyboard = false
+        setCurrentAnimation("front")
+        return
+    end
+
+    stairAction.phase = "hop"
+    stairAction.stepIndex = stepIndex
+    stairAction.startX = character.x
+    stairAction.startY = character.y
+    stairAction.elapsed = 0
+    sprite.currentFrame = 1
+end
+
+local function startStairClimb(item)
+    local bounds = getFurnitureVisualBounds(item)
+    local floorFootY = bounds.y + bounds.height * 0.80
+    local approachX = bounds.x + bounds.width * 0.10 - character.width * 0.5
+    local firstStepX = bounds.x + bounds.width * 0.34 - character.width * 0.5
+    local secondStepX = bounds.x + bounds.width * 0.69 - character.width * 0.5
+
+    stairAction.active = true
+    stairAction.phase = "approach"
+    stairAction.item = item
+    stairAction.stepIndex = 0
+    stairAction.elapsed = 0
+    stairAction.waypoints = {
+        {x = firstStepX, y = bounds.y + bounds.height * 0.44 - character.height},
+        {x = secondStepX, y = bounds.y + bounds.height * 0.23 - character.height}
+    }
+    stairAction.approachX = clamp(approachX, 0, roomWorldWidth - character.width)
+    stairAction.approachY = clamp(floorFootY - character.height, getMinCharacterFloorY(), getWorldFloorY())
+
+    character.isMovingToTarget = false
+    character.movePath = nil
+    character.isLanded = true
+    character.fallTargetY = nil
+end
+
+local function updateStairAction(dt)
+    if not stairAction.active then
+        return false
+    end
+
+    if not stairAction.item then
+        stairAction.active = false
+        return false
+    end
+
+    if stairAction.phase == "approach" then
+        local deltaX = stairAction.approachX - character.x
+        local deltaY = stairAction.approachY - character.y
+        local distance = math.sqrt(deltaX * deltaX + deltaY * deltaY)
+
+        if distance <= 4 then
+            character.x = stairAction.approachX
+            character.y = stairAction.approachY
+            beginStairHop(1)
+        else
+            local moveAmount = math.min(distance, character.moveSpeed * dt)
+            character.x = character.x + deltaX / distance * moveAmount
+            character.y = character.y + deltaY / distance * moveAmount
+            sprite.isMovingByKeyboard = true
+            setAnimationFromMoveVector(deltaX, deltaY)
+            updateSpriteAnimation(dt)
+        end
+    elseif stairAction.phase == "hop" then
+        local waypoint = stairAction.waypoints[stairAction.stepIndex]
+        stairAction.elapsed = stairAction.elapsed + dt
+        local ratio = clamp(stairAction.elapsed / stairAction.duration, 0, 1)
+        local smoothRatio = ratio * ratio * (3 - 2 * ratio)
+        local arcHeight = math.sin(ratio * math.pi) * stairAction.jumpHeight
+        character.x = stairAction.startX + (waypoint.x - stairAction.startX) * smoothRatio
+        character.y = stairAction.startY + (waypoint.y - stairAction.startY) * smoothRatio - arcHeight
+        sprite.isMovingByKeyboard = false
+        setCurrentAnimation("front")
+        sprite.currentFrame = 1
+
+        if ratio >= 1 then
+            character.x = waypoint.x
+            character.y = waypoint.y
+            beginStairHop(stairAction.stepIndex + 1)
+        end
+    end
+
+    updateCamera(dt, false)
+    return true
+end
+
 local function isPointOnPlacedFurniture(worldX, worldY)
     for _, item in ipairs(placedFurniture) do
         if item.blocksMovement ~= false then
@@ -966,7 +1091,7 @@ local function getCurrentAnimation()
 end
 
 -- 현재 재생할 애니메이션을 바꿉니다.
-local function setCurrentAnimation(animationName)
+setCurrentAnimation = function(animationName)
     if not sprite.animations[animationName] then
         return
     end
@@ -980,7 +1105,7 @@ end
 
 -- 이동 벡터에서 더 크게 움직이는 축을 기준으로 걷기 애니메이션을 고릅니다.
 -- 옆으로 찍은 이동에 y값이 조금 섞여도 좌/우 걷기가 우선 나오도록 합니다.
-local function setAnimationFromMoveVector(moveX, moveY)
+setAnimationFromMoveVector = function(moveX, moveY)
     if math.abs(moveX) >= math.abs(moveY) then
         if moveX > 0 then
             setCurrentAnimation("right")
@@ -1987,6 +2112,17 @@ function love.mousepressed(windowX, windowY, button)
             clickedFurniture = findFurnitureAt(pointerX, pointerY)
         end
 
+        if clickedFurniture and clickedFurniture.id == "stairs" then
+            local stairBounds = getFurnitureVisualBounds(clickedFurniture)
+            if pointerY <= stairBounds.y + stairBounds.height * 0.58 then
+                furnitureEdit.selectedItem = nil
+                furnitureEdit.isSizing = false
+                furnitureDrag.item = nil
+                startStairClimb(clickedFurniture)
+                return
+            end
+        end
+
         if clickedFurniture then
             furnitureEdit.selectedItem = clickedFurniture
             furnitureEdit.isSizing = true
@@ -2075,7 +2211,7 @@ function love.wheelmoved(x, y)
 end
 
 -- 매 프레임마다 스프라이트 애니메이션을 갱신합니다.
-local function updateSpriteAnimation(dt)
+updateSpriteAnimation = function(dt)
     local animation = getCurrentAnimation()
 
     if not animation or not animation.isLoaded then
@@ -2128,6 +2264,10 @@ function love.update(dt)
     -- 채팅 화면은 별도의 전체 화면 장면입니다. 대화 중에는 뒤쪽 방의
     -- 이동과 낙하를 멈춰 열기 전 캐릭터 위치가 바뀌지 않게 합니다.
     if ui.isChatOpen then
+        return
+    end
+
+    if updateStairAction(dt) then
         return
     end
 
