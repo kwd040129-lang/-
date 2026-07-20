@@ -2685,8 +2685,15 @@ local function drawSortedWorldObjects()
             and characterBounds.x < bounds.x + bounds.width
             and characterBounds.x + characterBounds.width > bounds.x
             and characterBounds.y < bounds.y + bounds.height then
-            local bottom = bounds.y + bounds.height
-            characterOcclusionBottom = characterOcclusionBottom and math.min(characterOcclusionBottom, bottom) or bottom
+            -- A side-view stair is a tall foreground silhouette. When the
+            -- character passes behind it, clip at the first tread rather than
+            -- at the transparent image bottom so detached legs cannot appear.
+            local occlusionLine = item.id == "stairs"
+                and (bounds.y + bounds.height * 0.48)
+                or (bounds.y + bounds.height)
+            characterOcclusionBottom = characterOcclusionBottom
+                and math.min(characterOcclusionBottom, occlusionLine)
+                or occlusionLine
         end
 
         table.insert(drawItems, {
