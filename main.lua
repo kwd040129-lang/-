@@ -609,22 +609,30 @@ end
 -- 계단의 그림, 충돌, 오르기 동작이 모두 같은 측면형 2단 구조를 사용합니다.
 local function getStairGeometry(item)
     local bounds = getFurnitureVisualBounds(item)
-    local splitX = bounds.x + bounds.width * 0.48
-    local lowTopY = bounds.y + bounds.height * 0.48
-    local highTopY = bounds.y + bounds.height * 0.08
+    -- stairs.png에는 큰 투명 여백이 있으므로 이미지 전체가 아닌 실제
+    -- 불투명 픽셀 영역(원본 1436x1095에서 측정)을 계단으로 사용합니다.
+    local bodyLeftX = bounds.x + bounds.width * (185 / 1436)
+    local bodyRightX = bounds.x + bounds.width * (1251 / 1436)
+    local splitX = bounds.x + bounds.width * (680 / 1436)
+    local lowTopY = bounds.y + bounds.height * (475 / 1095)
+    local highTopY = bounds.y + bounds.height * (249 / 1095)
+    local baseY = bounds.y + bounds.height * (854 / 1095)
     -- 계단 뒤에는 캐릭터 한 명의 발 깊이보다 넉넉한 충돌 구역을 둡니다.
     -- 이 구역이 캐릭터가 계단 몸체 안까지 내려오는 것을 막아, 뒤로
     -- 지나갈 때 다리가 계단 아래로 튀어나오는 현상을 방지합니다.
-    local depthBand = math.max(32, bounds.height * 0.28)
+    local depthBand = math.max(30, bounds.height * 0.22)
     -- 화면 아래쪽이 앞쪽이므로 앞 경계도 계단 바닥선보다 위에 둡니다.
-    local collisionFrontY = bounds.footY - bounds.height * 0.04
+    local collisionFrontY = baseY - bounds.height * 0.025
     local collisionBackY = collisionFrontY - depthBand
 
     return {
         bounds = bounds,
+        bodyLeftX = bodyLeftX,
+        bodyRightX = bodyRightX,
         splitX = splitX,
         lowTopY = lowTopY,
         highTopY = highTopY,
+        baseY = baseY,
         backY = collisionBackY,
         frontY = collisionFrontY,
         depthBand = depthBand
@@ -637,9 +645,9 @@ local function getFurnitureCollisionRect(item)
 
     if item.id == "stairs" then
         local geometry = getStairGeometry(item)
-        return bounds.x + marginX,
+        return geometry.bodyLeftX,
             geometry.backY,
-            bounds.width - marginX * 2,
+            geometry.bodyRightX - geometry.bodyLeftX,
             geometry.frontY - geometry.backY
     end
 
@@ -820,11 +828,10 @@ end
 
 local function startStairClimb(item)
     local geometry = getStairGeometry(item)
-    local bounds = geometry.bounds
-    local floorFootY = geometry.frontY + 2
-    local approachX = bounds.x - character.width * 0.22
-    local firstStepX = bounds.x + bounds.width * 0.27 - character.width * 0.5
-    local secondStepX = geometry.splitX + bounds.width * 0.25 - character.width * 0.5
+    local floorFootY = geometry.baseY + 3
+    local approachX = geometry.bodyLeftX - character.width * 0.5
+    local firstStepX = (geometry.bodyLeftX + geometry.splitX) * 0.5 - character.width * 0.5
+    local secondStepX = (geometry.splitX + geometry.bodyRightX) * 0.5 - character.width * 0.5
 
     stairAction.active = true
     stairAction.onTop = false
@@ -860,13 +867,14 @@ local function tryStartAutomaticStairClimb(moveX, moveY)
         if item.id == "stairs" then
             local geometry = getStairGeometry(item)
             local bounds = geometry.bounds
-            local footDistanceToFirstStep = bounds.x - characterBounds.footX
+            local footDistanceToFirstStep = geometry.bodyLeftX - characterBounds.footX
             local laneTolerance = math.max(24, bounds.height * 0.15)
             local approachDistance = math.max(56, characterBounds.width * 0.78)
-            local isBesideFirstStep = characterBounds.footX < bounds.x
-                and footDistanceToFirstStep >= 0
+            local edgeAllowance = math.max(8, bounds.width * 0.035)
+            local isBesideFirstStep = characterBounds.footX <= geometry.bodyLeftX + edgeAllowance
+                and footDistanceToFirstStep >= -edgeAllowance
                 and footDistanceToFirstStep <= approachDistance
-            local isAtFloorLane = math.abs(characterBounds.footY - geometry.frontY) <= laneTolerance
+            local isAtFloorLane = math.abs(characterBounds.footY - geometry.baseY) <= laneTolerance
 
             if isBesideFirstStep and isAtFloorLane then
                 startStairClimb(item)
