@@ -2502,12 +2502,10 @@ function love.update(dt)
     end
 
     if moveX ~= 0 or moveY ~= 0 then
-        if stairAction.onTop then
-            character.stairLift = 0
-        end
-        stairAction.onTop = false
         character.isMovingToTarget = false
-        character.fallTargetY = nil
+        if not stairAction.onTop then
+            character.fallTargetY = nil
+        end
     elseif character.isMovingToTarget then
         local deltaX = character.targetX - character.x
         local deltaY = character.targetY - character.y
@@ -2536,6 +2534,13 @@ function love.update(dt)
     if tryStartAutomaticStairClimb(intendedMoveX, intendedMoveY) then
         updateCamera(dt, false)
         return
+    end
+
+    -- 계단 오르기 입력이 아니라고 확인된 뒤에만 발판 상태를 해제합니다.
+    if (moveX ~= 0 or moveY ~= 0) and stairAction.onTop then
+        character.stairLift = 0
+        stairAction.onTop = false
+        character.fallTargetY = nil
     end
 
     sprite.isMovingByKeyboard = moveX ~= 0 or moveY ~= 0 or targetMoveX ~= 0 or targetMoveY ~= 0
