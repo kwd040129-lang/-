@@ -708,7 +708,11 @@ local function getFurnitureCollisionRect(item)
 end
 
 local function getNearbyRefrigerator()
-    if character.isDragging or stairAction.active or stairAction.onTop then
+    if character.isDragging
+        or character.isMovingToTarget
+        or sprite.isMovingByKeyboard
+        or stairAction.active
+        or stairAction.onTop then
         return nil
     end
 
@@ -718,9 +722,10 @@ local function getNearbyRefrigerator()
         if item.id == "refrigerator" then
             local bounds = getFurnitureVisualBounds(item)
             local horizontalDistance = math.abs(characterBounds.footX - bounds.footX)
-            local isInFront = characterBounds.groundFootY >= bounds.footY - 28
-                and characterBounds.groundFootY <= bounds.footY + 92
-            local isCloseEnough = horizontalDistance <= bounds.width * 0.72 + 34
+            local frontDistance = characterBounds.groundFootY - bounds.footY
+            local horizontalLimit = math.max(30, bounds.width * 0.46)
+            local isInFront = frontDistance >= -4 and frontDistance <= 34
+            local isCloseEnough = horizontalDistance <= horizontalLimit
 
             if isInFront and isCloseEnough then
                 return item
