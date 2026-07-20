@@ -1,0 +1,20 @@
+{
+  "name": "tamagotchi-gemini-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Express backend for the Love2D Tamagotchi Gemini chat",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
+  }
+}
