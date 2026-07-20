@@ -2600,12 +2600,15 @@ local function drawFurnitureItem(item)
         end
     end
 
-    if chromaKeyShaderReady then
+    -- 침대와 계단은 알파 채널이 있는 투명 PNG이므로 크로마키를 사용하지 않습니다.
+    -- 초록색 유리 영역을 가진 기존 창문 이미지에만 셰이더를 적용합니다.
+    local useChromaKey = item.id == "window" and chromaKeyShaderReady
+    if useChromaKey then
         love.graphics.setShader(chromaKeyShader)
     end
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.draw(item.image, bounds.x, bounds.y, 0, scaleX, scaleY)
-    if chromaKeyShaderReady then
+    if useChromaKey then
         love.graphics.setShader()
     end
 end
@@ -2687,7 +2690,6 @@ local function drawSortedWorldObjects()
     local drawItems = {}
     local characterBounds = getCharacterVisualBounds()
     local characterDepthY = (stairAction.active or stairAction.onTop) and math.huge or characterBounds.footY
-    local characterOccluders = {}
 
     if character.isDragging then
         table.insert(drawItems, {
@@ -2711,15 +2713,6 @@ local function drawSortedWorldObjects()
             furnitureDepthY = getStairGeometry(item).backY
         end
 
-        if item.id == "stairs"
-            and item.blocksMovement ~= false
-            and characterDepthY < furnitureDepthY
-            and characterBounds.footX >= bounds.x
-            and characterBounds.footX <= bounds.x + bounds.width
-            and characterBounds.y < bounds.y + bounds.height then
-            table.insert(characterOccluders, getStairGeometry(item))
-        end
-
         table.insert(drawItems, {
             kind = "furniture",
             depthY = furnitureDepthY,
@@ -2733,38 +2726,8 @@ local function drawSortedWorldObjects()
 
     for _, entry in ipairs(drawItems) do
         if entry.kind == "character" then
-            if #characterOccluders > 0 then
-                -- 계단의 실제 L자 실루엣에 해당하는 부분만 가립니다. 화면 전체를
-                -- 수평으로 자르면 계단 옆의 캐릭터까지 머리만 남는 문제가 생깁니다.
-                love.graphics.stencil(function()
-                    for _, geometry in ipairs(characterOccluders) do
-                        local bounds = geometry.bounds
-                        local maskBottom = roomWorldHeight + characterBounds.height
-
-                        love.graphics.rectangle(
-                            "fill",
-                            bounds.x,
-                            geometry.lowTopY,
-                            geometry.splitX - bounds.x,
-                            maskBottom - geometry.lowTopY
-                        )
-                        love.graphics.rectangle(
-                            "fill",
-                            geometry.splitX,
-                            geometry.highTopY,
-                            bounds.x + bounds.width - geometry.splitX,
-                            maskBottom - geometry.highTopY
-                        )
-                    end
-                end, "replace", 1, true)
-                love.graphics.setStencilTest("equal", 0)
-                drawCharacterShadow()
-                drawSpriteCharacter()
-                love.graphics.setStencilTest()
-            else
-                drawCharacterShadow()
-                drawSpriteCharacter()
-            end
+            drawCharacterShadow()
+            drawSpriteCharacter()
         elseif entry.kind == "character_shadow" then
             drawCharacterShadow()
         elseif entry.kind == "furniture" then
@@ -3223,13 +3186,14 @@ local function drawFurniturePanel()
 
         drawRoundedPanel(itemX, itemY, layout.width, layout.height, 8, {1, 1, 1, 0.72}, borderColor)
 
-        if chromaKeyShaderReady then
+        local useChromaKey = item.id == "window" and chromaKeyShaderReady
+        if useChromaKey then
             love.graphics.setShader(chromaKeyShader)
         end
 
         drawImageContained(item.image, itemX + 8, itemY + 8, layout.width - 16, layout.height - 40)
 
-        if chromaKeyShaderReady then
+        if useChromaKey then
             love.graphics.setShader()
         end
 
