@@ -923,6 +923,36 @@ local function isCharacterOnPlacedFurnitureAt(characterX, characterY)
     return isRectOnPlacedFurniture(footRectX, footRectY, footWidth, footHeight)
 end
 
+local function getCharacterFurnitureOverlapAreaAt(characterX, characterY)
+    local footX = characterX + character.width * 0.5
+    local footY = characterY + character.height
+    local farFootY = getFloorTopY()
+    local nearFootY = roomWorldHeight
+    local depthRatio = clamp((footY - farFootY) / (nearFootY - farFootY), 0, 1)
+    local depthScale = character.minDepthScale + (character.maxDepthScale - character.minDepthScale) * depthRatio
+    local footWidth = character.width * depthScale * 0.88
+    local footHeight = 34 * depthScale
+    local footLeft = footX - footWidth * 0.5
+    local footTop = footY - footHeight
+    local totalArea = 0
+
+    for _, item in ipairs(placedFurniture) do
+        if item.blocksMovement ~= false then
+            local bounds = getFurnitureVisualBounds(item)
+            local marginX = bounds.width * (item.collisionInsetX or 0.02)
+            local blockLeft = bounds.x + marginX
+            local blockTop = bounds.y + bounds.height * (item.collisionTopPadding or 0.03)
+            local blockRight = bounds.x + bounds.width - marginX
+            local blockBottom = bounds.y + bounds.height * (1 - (item.collisionBottomPadding or 0))
+            local overlapWidth = math.max(0, math.min(footLeft + footWidth, blockRight) - math.max(footLeft, blockLeft))
+            local overlapHeight = math.max(0, math.min(footTop + footHeight, blockBottom) - math.max(footTop, blockTop))
+            totalArea = totalArea + overlapWidth * overlapHeight
+        end
+    end
+
+    return totalArea
+end
+
 local function isCharacterPathSegmentClear(fromX, fromY, toX, toY)
     local deltaX = toX - fromX
     local deltaY = toY - fromY
@@ -2402,6 +2432,7 @@ function love.update(dt)
         local actualMoveY = moveY
         local previousX = character.x
         local previousY = character.y
+        local previousOverlapArea = getCharacterFurnitureOverlapAreaAt(previousX, previousY)
 
         if actualMoveX == 0 and actualMoveY == 0 then
             actualMoveX = targetMoveX
@@ -2435,7 +2466,8 @@ function love.update(dt)
         character.x = nextX
         character.y = nextY
 
-        if isCharacterOnPlacedFurnitureAt(character.x, character.y) then
+        local nextOverlapArea = getCharacterFurnitureOverlapAreaAt(character.x, character.y)
+        if nextOverlapArea > 0 and nextOverlapArea >= previousOverlapArea - 0.01 then
             character.x = previousX
             character.y = previousY
             character.isMovingToTarget = false
