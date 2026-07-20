@@ -846,6 +846,8 @@ end
 local function startStairClimb(item)
     local geometry = getStairGeometry(item)
     local floorFootY = geometry.baseY + 3
+    -- 신발 끝이 발판 테두리 안으로 조금 들어가야 떠 보이지 않습니다.
+    local footInset = clamp(geometry.bounds.height * 0.018, 2, 5)
     local approachX = geometry.bodyLeftX - character.width * 0.5
     local firstStepX = (geometry.bodyLeftX + geometry.splitX) * 0.5 - character.width * 0.5
     local secondStepX = (geometry.splitX + geometry.bodyRightX) * 0.5 - character.width * 0.5
@@ -861,13 +863,13 @@ local function startStairClimb(item)
     stairAction.waypoints = {
         {
             x = firstStepX,
-            lift = math.max(0, floorFootY - geometry.lowTopY),
-            surfaceY = geometry.lowTopY
+            lift = math.max(0, floorFootY - (geometry.lowTopY + footInset)),
+            surfaceY = geometry.lowTopY + footInset
         },
         {
             x = secondStepX,
-            lift = math.max(0, floorFootY - geometry.highTopY),
-            surfaceY = geometry.highTopY
+            lift = math.max(0, floorFootY - (geometry.highTopY + footInset)),
+            surfaceY = geometry.highTopY + footInset
         }
     }
     stairAction.approachX = clamp(approachX, 0, roomWorldWidth - character.width)
@@ -2718,6 +2720,12 @@ local function drawPlacedFurniture()
 end
 
 local function drawCharacterShadow()
+    -- 계단을 오르기 시작한 뒤에는 발판 자체가 캐릭터를 받치므로
+    -- 방 바닥용 타원 그림자를 표시하지 않습니다.
+    if (stairAction.active and stairAction.phase ~= "approach") or stairAction.onTop then
+        return
+    end
+
     local bounds = getCharacterVisualBounds()
     local shadowX = bounds.footX
     local shadowY = bounds.footY - 3 * bounds.scale
