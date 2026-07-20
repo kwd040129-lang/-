@@ -172,6 +172,7 @@ local chat = {
     isBackspaceHeld = false,
     backspaceRepeatTimer = 0,
     backspaceRepeatStarted = false,
+    portraitShowHistory = false,
     isSending = false,
     threadErrorShown = false,
     thread = nil,
@@ -1329,6 +1330,10 @@ local function getChatButtonRect()
 end
 
 local function getChatWindowRect()
+    if currentOrientation == "portrait" then
+        return {x = 0, y = 0, width = virtualWidth, height = virtualHeight}
+    end
+
     local width = math.min(520, virtualWidth - 40)
     local height = math.min(350, virtualHeight - 80)
 
@@ -1342,17 +1347,38 @@ end
 
 local function getChatCloseRect()
     local rect = getChatWindowRect()
+
+    if currentOrientation == "portrait" then
+        return {x = rect.width - 48, y = 14, width = 34, height = 34}
+    end
+
     return {x = rect.x + rect.width - 42, y = rect.y + 10, width = 30, height = 30}
 end
 
 local function getChatInputRect()
     local rect = getChatWindowRect()
+
+    if currentOrientation == "portrait" then
+        local keyboardTop = math.floor(virtualHeight * 0.625)
+        return {x = 16, y = keyboardTop - 58, width = rect.width - 112, height = 44}
+    end
+
     return {x = rect.x + 16, y = rect.y + rect.height - 54, width = rect.width - 112, height = 38}
 end
 
 local function getChatSendRect()
     local rect = getChatWindowRect()
+
+    if currentOrientation == "portrait" then
+        local keyboardTop = math.floor(virtualHeight * 0.625)
+        return {x = rect.width - 94, y = keyboardTop - 58, width = 78, height = 44}
+    end
+
     return {x = rect.x + rect.width - 88, y = rect.y + rect.height - 54, width = 72, height = 38}
+end
+
+local function getChatHistoryToggleRect()
+    return {x = 16, y = 14, width = 112, height = 36}
 end
 
 local function getInteriorWindowRect()
@@ -1484,6 +1510,7 @@ local function openChatWindow()
     chat.isBackspaceHeld = false
     chat.backspaceRepeatTimer = 0
     chat.backspaceRepeatStarted = false
+    chat.portraitShowHistory = false
     love.keyboard.setTextInput(true)
 end
 
@@ -1493,6 +1520,7 @@ local function closeChatWindow()
     chat.isBackspaceHeld = false
     chat.backspaceRepeatTimer = 0
     chat.backspaceRepeatStarted = false
+    chat.portraitShowHistory = false
     love.keyboard.setTextInput(false)
 end
 
@@ -1579,6 +1607,9 @@ local function handleUiMousePressed(virtualX, virtualY)
     if ui.isChatOpen then
         if isPointInsideRect(virtualX, virtualY, getChatCloseRect()) then
             closeChatWindow()
+        elseif currentOrientation == "portrait" and isPointInsideRect(virtualX, virtualY, getChatHistoryToggleRect()) then
+            chat.portraitShowHistory = not chat.portraitShowHistory
+            chat.scrollY = 0
         elseif isPointInsideRect(virtualX, virtualY, getChatSendRect()) then
             sendChatMessage()
         end
@@ -2445,7 +2476,7 @@ local function getSingleLineTextTail(text, maxWidth)
     return visibleText
 end
 
-local function drawChatWindow()
+local function drawStandardChatWindow()
     if not ui.isChatOpen then
         return
     end
@@ -2459,8 +2490,22 @@ local function drawChatWindow()
     love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
     drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 12, {0.98, 0.95, 0.90, 0.98}, {0.35, 0.22, 0.14, 0.55})
 
+    if currentOrientation == "portrait" then
+        local keyboardTop = math.floor(virtualHeight * 0.625)
+        love.graphics.setColor(0.91, 0.87, 0.82, 1)
+        love.graphics.rectangle("fill", 0, keyboardTop, virtualWidth, virtualHeight - keyboardTop)
+    end
+
     love.graphics.setColor(0.18, 0.12, 0.09, 1)
-    love.graphics.print("Chat", rect.x + 18, rect.y + 18)
+    if currentOrientation == "portrait" then
+        love.graphics.printf("대화 기록", 0, rect.y + 22, rect.width, "center")
+        local toggleRect = getChatHistoryToggleRect()
+        drawRoundedPanel(toggleRect.x, toggleRect.y, toggleRect.width, toggleRect.height, 8, {0.95, 0.53, 0.50, 0.96}, {0.46, 0.16, 0.14, 0.34})
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf("캐릭터", toggleRect.x, toggleRect.y + 8, toggleRect.width, "center")
+    else
+        love.graphics.print("Chat", rect.x + 18, rect.y + 18)
+    end
     drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7, {0.28, 0.22, 0.20, 0.16}, {0.30, 0.20, 0.16, 0.30})
     love.graphics.setColor(0.18, 0.12, 0.09, 1)
     love.graphics.printf("X", closeRect.x, closeRect.y + 7, closeRect.width, "center")
@@ -2529,6 +2574,132 @@ local function drawChatWindow()
     drawRoundedPanel(sendRect.x, sendRect.y, sendRect.width, sendRect.height, 7, sendColor, {0.46, 0.16, 0.14, 0.34})
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.printf("Send", sendRect.x, sendRect.y + 10, sendRect.width, "center")
+end
+
+local function getLatestCharacterReply()
+    if chat.isSending then
+        return "생각하고 있어..."
+    end
+
+    for index = #chat.messages, 1, -1 do
+        local message = chat.messages[index]
+        if message.role == "assistant" or message.role == "system" then
+            return message.text
+        end
+    end
+
+    return "무슨 이야기를 해볼까?"
+end
+
+local function drawChatCharacterAt(centerX, bottomY, drawHeight)
+    local animation = getCurrentAnimation()
+    local drawWidth = drawHeight * sprite.frameWidth / sprite.frameHeight
+    local drawX = centerX - drawWidth * 0.5
+    local drawY = bottomY - drawHeight
+
+    love.graphics.setColor(0, 0, 0, 0.16)
+    love.graphics.ellipse("fill", centerX, bottomY - 3, drawWidth * 0.42, 10)
+
+    if not animation or not animation.isLoaded or not animation.quads[sprite.currentFrame] then
+        love.graphics.setColor(0.96, 0.72, 0.76, 1)
+        love.graphics.circle("fill", centerX, drawY + drawHeight * 0.30, drawWidth * 0.28)
+        love.graphics.rectangle("fill", drawX + drawWidth * 0.25, drawY + drawHeight * 0.48, drawWidth * 0.50, drawHeight * 0.46, 12, 12)
+        return
+    end
+
+    if chromaKeyShaderReady then
+        love.graphics.setShader(chromaKeyShader)
+    end
+
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(
+        animation.image,
+        animation.quads[sprite.currentFrame],
+        drawX,
+        drawY,
+        0,
+        drawWidth / sprite.frameWidth,
+        drawHeight / sprite.frameHeight
+    )
+
+    if chromaKeyShaderReady then
+        love.graphics.setShader()
+    end
+end
+
+local function drawPortraitCharacterChat()
+    local closeRect = getChatCloseRect()
+    local toggleRect = getChatHistoryToggleRect()
+    local inputRect = getChatInputRect()
+    local sendRect = getChatSendRect()
+    local keyboardTop = math.floor(virtualHeight * 0.625)
+
+    love.graphics.setColor(0.98, 0.95, 0.90, 1)
+    love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
+    love.graphics.setColor(0.91, 0.87, 0.82, 1)
+    love.graphics.rectangle("fill", 0, keyboardTop, virtualWidth, virtualHeight - keyboardTop)
+
+    drawRoundedPanel(toggleRect.x, toggleRect.y, toggleRect.width, toggleRect.height, 8, {0.95, 0.53, 0.50, 0.96}, {0.46, 0.16, 0.14, 0.34})
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf("대화 기록", toggleRect.x, toggleRect.y + 8, toggleRect.width, "center")
+
+    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 8, {0.28, 0.22, 0.20, 0.16}, {0.30, 0.20, 0.16, 0.30})
+    love.graphics.setColor(0.18, 0.12, 0.09, 1)
+    love.graphics.printf("X", closeRect.x, closeRect.y + 8, closeRect.width, "center")
+
+    local reply = getLatestCharacterReply()
+    local bubbleX = 24
+    local bubbleY = 68
+    local bubbleWidth = virtualWidth - 48
+    local bubbleTextWidth = bubbleWidth - 28
+    local font = love.graphics.getFont()
+    local _, wrappedLines = font:getWrap(reply, bubbleTextWidth)
+    local bubbleHeight = clamp(#wrappedLines * font:getHeight() + 30, 68, 184)
+
+    drawRoundedPanel(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 14, {1, 1, 1, 0.98}, {0.42, 0.29, 0.22, 0.32})
+    love.graphics.setColor(1, 1, 1, 0.98)
+    love.graphics.polygon("fill", virtualWidth * 0.5 - 12, bubbleY + bubbleHeight - 1, virtualWidth * 0.5 + 12, bubbleY + bubbleHeight - 1, virtualWidth * 0.5, bubbleY + bubbleHeight + 15)
+
+    local oldScissorX, oldScissorY, oldScissorWidth, oldScissorHeight = love.graphics.getScissor()
+    love.graphics.setScissor(
+        screen.offsetX + (bubbleX + 14) * screen.scale,
+        screen.offsetY + (bubbleY + 12) * screen.scale,
+        bubbleTextWidth * screen.scale,
+        (bubbleHeight - 24) * screen.scale
+    )
+    love.graphics.setColor(0.16, 0.12, 0.10, 1)
+    love.graphics.printf(reply, bubbleX + 14, bubbleY + 12, bubbleTextWidth, "left")
+    if oldScissorX then
+        love.graphics.setScissor(oldScissorX, oldScissorY, oldScissorWidth, oldScissorHeight)
+    else
+        love.graphics.setScissor()
+    end
+
+    drawChatCharacterAt(virtualWidth * 0.5, inputRect.y - 16, 174)
+
+    drawRoundedPanel(inputRect.x, inputRect.y, inputRect.width, inputRect.height, 8, {1, 1, 1, 0.96}, {0.35, 0.22, 0.14, 0.45})
+    love.graphics.setColor(0.16, 0.12, 0.10, 1)
+    local visibleInput = chat.input .. chat.composition
+    local inputText = visibleInput ~= "" and visibleInput or "메시지를 입력하세요..."
+    inputText = getSingleLineTextTail(inputText, inputRect.width - 20)
+    love.graphics.print(inputText, inputRect.x + 10, inputRect.y + 12)
+
+    local sendColor = chat.isSending and {0.55, 0.52, 0.50, 0.75} or {0.95, 0.53, 0.50, 0.96}
+    drawRoundedPanel(sendRect.x, sendRect.y, sendRect.width, sendRect.height, 8, sendColor, {0.46, 0.16, 0.14, 0.34})
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf("전송", sendRect.x, sendRect.y + 12, sendRect.width, "center")
+end
+
+local function drawChatWindow()
+    if not ui.isChatOpen then
+        return
+    end
+
+    if currentOrientation == "portrait" and not chat.portraitShowHistory then
+        drawPortraitCharacterChat()
+    else
+        drawStandardChatWindow()
+    end
 end
 
 local function drawFurnitureEditControls()
