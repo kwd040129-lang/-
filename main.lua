@@ -234,9 +234,7 @@ local furnitureLibrary = {
             minDepthScale = 0.62,
             maxDepthScale = 0.92,
             visualHeightScale = 1.28,
-            collisionInsetX = 0.14,
-            collisionTopPadding = 0.62,
-            collisionBottomPadding = 0.22,
+            collisionInsetX = 0.04,
             blocksMovement = true,
             renderBehind = false
         }
@@ -608,6 +606,45 @@ local function getFurnitureVisualBounds(item)
     }
 end
 
+-- 계단의 그림, 충돌, 오르기 동작이 모두 같은 측면형 2단 구조를 사용합니다.
+local function getStairGeometry(item)
+    local bounds = getFurnitureVisualBounds(item)
+    local splitX = bounds.x + bounds.width * 0.48
+    local lowTopY = bounds.y + bounds.height * 0.48
+    local highTopY = bounds.y + bounds.height * 0.08
+    local depthBand = math.max(10, bounds.height * 0.09)
+
+    return {
+        bounds = bounds,
+        splitX = splitX,
+        lowTopY = lowTopY,
+        highTopY = highTopY,
+        backY = bounds.footY - depthBand,
+        frontY = bounds.footY + depthBand,
+        depthBand = depthBand
+    }
+end
+
+local function getFurnitureCollisionRect(item)
+    local bounds = getFurnitureVisualBounds(item)
+    local marginX = bounds.width * (item.collisionInsetX or 0.02)
+
+    if item.id == "stairs" then
+        local geometry = getStairGeometry(item)
+        return bounds.x + marginX,
+            geometry.backY,
+            bounds.width - marginX * 2,
+            geometry.frontY - geometry.backY
+    end
+
+    local topPadding = bounds.height * (item.collisionTopPadding or 0.03)
+    local bottomPadding = bounds.height * (item.collisionBottomPadding or 0)
+    return bounds.x + marginX,
+        bounds.y + topPadding,
+        bounds.width - marginX * 2,
+        bounds.height - topPadding - bottomPadding
+end
+
 local function getFurnitureDeleteButtonRect(item)
     local bounds = getFurnitureVisualBounds(item)
     local size = 24 / math.max(0.5, bounds.scale)
@@ -789,11 +826,12 @@ local function beginStairHop(stepIndex)
 end
 
 local function startStairClimb(item)
-    local bounds = getFurnitureVisualBounds(item)
-    local floorFootY = bounds.y + bounds.height * 0.80
-    local approachX = bounds.x + bounds.width * 0.10 - character.width * 0.5
-    local firstStepX = bounds.x + bounds.width * 0.34 - character.width * 0.5
-    local secondStepX = bounds.x + bounds.width * 0.69 - character.width * 0.5
+    local geometry = getStairGeometry(item)
+    local bounds = geometry.bounds
+    local floorFootY = geometry.frontY + 2
+    local approachX = bounds.x - character.width * 0.22
+    local firstStepX = bounds.x + bounds.width * 0.27 - character.width * 0.5
+    local secondStepX = geometry.splitX + bounds.width * 0.25 - character.width * 0.5
 
     stairAction.active = true
     stairAction.onTop = false
@@ -802,8 +840,8 @@ local function startStairClimb(item)
     stairAction.stepIndex = 0
     stairAction.elapsed = 0
     stairAction.waypoints = {
-        {x = firstStepX, y = bounds.y + bounds.height * 0.44 - character.height},
-        {x = secondStepX, y = bounds.y + bounds.height * 0.23 - character.height}
+        {x = firstStepX, y = geometry.lowTopY - character.height},
+        {x = secondStepX, y = geometry.highTopY - character.height}
     }
     stairAction.approachX = clamp(approachX, 0, roomWorldWidth - character.width)
     stairAction.approachY = clamp(floorFootY - character.height, getMinCharacterFloorY(), getWorldFloorY())
@@ -867,15 +905,12 @@ end
 local function isPointOnPlacedFurniture(worldX, worldY)
     for _, item in ipairs(placedFurniture) do
         if item.blocksMovement ~= false then
-            local bounds = getFurnitureVisualBounds(item)
-            local marginX = bounds.width * (item.collisionInsetX or 0.02)
-            local topPadding = bounds.height * (item.collisionTopPadding or 0.03)
-            local bottomPadding = bounds.height * (item.collisionBottomPadding or 0)
+            local blockX, blockY, blockWidth, blockHeight = getFurnitureCollisionRect(item)
 
-            if worldX >= bounds.x + marginX
-                and worldX <= bounds.x + bounds.width - marginX
-                and worldY >= bounds.y + topPadding
-                and worldY <= bounds.y + bounds.height - bottomPadding then
+            if worldX >= blockX
+                and worldX <= blockX + blockWidth
+                and worldY >= blockY
+                and worldY <= blockY + blockHeight then
                 return true
             end
         end
@@ -894,14 +929,7 @@ end
 local function isRectOnPlacedFurniture(rectX, rectY, rectWidth, rectHeight)
     for _, item in ipairs(placedFurniture) do
         if item.blocksMovement ~= false then
-            local bounds = getFurnitureVisualBounds(item)
-            local marginX = bounds.width * (item.collisionInsetX or 0.02)
-            local topPadding = bounds.height * (item.collisionTopPadding or 0.03)
-            local bottomPadding = bounds.height * (item.collisionBottomPadding or 0)
-            local blockX = bounds.x + marginX
-            local blockY = bounds.y + topPadding
-            local blockWidth = bounds.width - marginX * 2
-            local blockHeight = bounds.height - topPadding - bottomPadding
+            local blockX, blockY, blockWidth, blockHeight = getFurnitureCollisionRect(item)
 
             if doRectsOverlap(rectX, rectY, rectWidth, rectHeight, blockX, blockY, blockWidth, blockHeight) then
                 return true
@@ -919,8 +947,8 @@ local function isCharacterOnPlacedFurnitureAt(characterX, characterY)
     local nearFootY = roomWorldHeight
     local depthRatio = clamp((footY - farFootY) / (nearFootY - farFootY), 0, 1)
     local depthScale = character.minDepthScale + (character.maxDepthScale - character.minDepthScale) * depthRatio
-    local footWidth = character.width * depthScale * 0.88
-    local footHeight = 34 * depthScale
+    local footWidth = character.width * depthScale * 0.34
+    local footHeight = 18 * depthScale
     local footRectX = footX - footWidth * 0.5
     local footRectY = footY - footHeight
 
@@ -934,20 +962,17 @@ local function getCharacterFurnitureOverlapAreaAt(characterX, characterY)
     local nearFootY = roomWorldHeight
     local depthRatio = clamp((footY - farFootY) / (nearFootY - farFootY), 0, 1)
     local depthScale = character.minDepthScale + (character.maxDepthScale - character.minDepthScale) * depthRatio
-    local footWidth = character.width * depthScale * 0.88
-    local footHeight = 34 * depthScale
+    local footWidth = character.width * depthScale * 0.34
+    local footHeight = 18 * depthScale
     local footLeft = footX - footWidth * 0.5
     local footTop = footY - footHeight
     local totalArea = 0
 
     for _, item in ipairs(placedFurniture) do
         if item.blocksMovement ~= false then
-            local bounds = getFurnitureVisualBounds(item)
-            local marginX = bounds.width * (item.collisionInsetX or 0.02)
-            local blockLeft = bounds.x + marginX
-            local blockTop = bounds.y + bounds.height * (item.collisionTopPadding or 0.03)
-            local blockRight = bounds.x + bounds.width - marginX
-            local blockBottom = bounds.y + bounds.height * (1 - (item.collisionBottomPadding or 0))
+            local blockLeft, blockTop, blockWidth, blockHeight = getFurnitureCollisionRect(item)
+            local blockRight = blockLeft + blockWidth
+            local blockBottom = blockTop + blockHeight
             local overlapWidth = math.max(0, math.min(footLeft + footWidth, blockRight) - math.max(footLeft, blockLeft))
             local overlapHeight = math.max(0, math.min(footTop + footHeight, blockBottom) - math.max(footTop, blockTop))
             totalArea = totalArea + overlapWidth * overlapHeight
@@ -2680,13 +2705,19 @@ local function drawSortedWorldObjects()
         local bounds = getFurnitureVisualBounds(item)
         local furnitureDepthY = item.renderBehind and -math.huge or bounds.footY
 
+        -- 계단 바로 앞의 캐릭터가 뒤로 잘못 분류되지 않도록 계단 뒤쪽
+        -- 경계선을 깊이 정렬 기준으로 사용합니다.
+        if item.id == "stairs" and not item.renderBehind then
+            furnitureDepthY = getStairGeometry(item).backY
+        end
+
         if item.id == "stairs"
             and item.blocksMovement ~= false
             and characterDepthY < furnitureDepthY
-            and characterBounds.x < bounds.x + bounds.width
-            and characterBounds.x + characterBounds.width > bounds.x
+            and characterBounds.footX >= bounds.x
+            and characterBounds.footX <= bounds.x + bounds.width
             and characterBounds.y < bounds.y + bounds.height then
-            table.insert(characterOccluders, bounds)
+            table.insert(characterOccluders, getStairGeometry(item))
         end
 
         table.insert(drawItems, {
@@ -2706,24 +2737,23 @@ local function drawSortedWorldObjects()
                 -- 계단의 실제 L자 실루엣에 해당하는 부분만 가립니다. 화면 전체를
                 -- 수평으로 자르면 계단 옆의 캐릭터까지 머리만 남는 문제가 생깁니다.
                 love.graphics.stencil(function()
-                    for _, bounds in ipairs(characterOccluders) do
-                        local splitX = bounds.x + bounds.width * 0.48
-                        local lowTreadY = bounds.y + bounds.height * 0.48
+                    for _, geometry in ipairs(characterOccluders) do
+                        local bounds = geometry.bounds
                         local maskBottom = roomWorldHeight + characterBounds.height
 
                         love.graphics.rectangle(
                             "fill",
                             bounds.x,
-                            lowTreadY,
-                            splitX - bounds.x,
-                            maskBottom - lowTreadY
+                            geometry.lowTopY,
+                            geometry.splitX - bounds.x,
+                            maskBottom - geometry.lowTopY
                         )
                         love.graphics.rectangle(
                             "fill",
-                            splitX,
-                            bounds.y,
-                            bounds.x + bounds.width - splitX,
-                            maskBottom - bounds.y
+                            geometry.splitX,
+                            geometry.highTopY,
+                            bounds.x + bounds.width - geometry.splitX,
+                            maskBottom - geometry.highTopY
                         )
                     end
                 end, "replace", 1, true)
