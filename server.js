@@ -4,10 +4,9 @@ import { GoogleGenAI } from "@google/genai";
 
 const app = express();
 const port = Number(process.env.PORT) || 3000;
-const configuredModel = process.env.GEMINI_MODEL?.trim();
-const model = !configuredModel || configuredModel === "gemini-2.5-flash"
-  ? "gemini-3.5-flash"
-  : configuredModel;
+// Keep chat costs predictable: this service intentionally permits only the
+// lowest-cost text model and does not accept a model override from the environment.
+const model = "gemini-2.5-flash-lite";
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "16kb" }));

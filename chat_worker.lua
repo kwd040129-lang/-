@@ -12,6 +12,48 @@ local function escapeJsonString(value)
         :gsub("\t", "\\t")
 end
 
+local function runCurlWithoutWindow(command)
+    if jit and jit.os == "Windows" then
+        local ffi = require("ffi")
+        ffi.cdef[[
+            typedef struct {
+                unsigned long cb; char *lpReserved; char *lpDesktop; char *lpTitle;
+                unsigned long dwX; unsigned long dwY; unsigned long dwXSize; unsigned long dwYSize;
+                unsigned long dwXCountChars; unsigned long dwYCountChars; unsigned long dwFillAttribute;
+                unsigned long dwFlags; unsigned short wShowWindow; unsigned short cbReserved2;
+                unsigned char *lpReserved2; void *hStdInput; void *hStdOutput; void *hStdError;
+            } STARTUPINFOA;
+            typedef struct { void *hProcess; void *hThread; unsigned long dwProcessId; unsigned long dwThreadId; } PROCESS_INFORMATION;
+            int CreateProcessA(const char *, char *, void *, void *, int, unsigned long, void *, const char *, STARTUPINFOA *, PROCESS_INFORMATION *);
+            unsigned long WaitForSingleObject(void *, unsigned long);
+            int GetExitCodeProcess(void *, unsigned long *);
+            int CloseHandle(void *);
+        ]]
+
+        local startupInfo = ffi.new("STARTUPINFOA")
+        startupInfo.cb = ffi.sizeof(startupInfo)
+        local processInfo = ffi.new("PROCESS_INFORMATION")
+        local commandBuffer = ffi.new("char[?]", #command + 1)
+        ffi.copy(commandBuffer, command)
+        local CREATE_NO_WINDOW = 0x08000000
+        local success = ffi.C.CreateProcessA(nil, commandBuffer, nil, nil, 0, CREATE_NO_WINDOW, nil, nil, startupInfo, processInfo)
+
+        if success == 0 then
+            return false, -1
+        end
+
+        ffi.C.WaitForSingleObject(processInfo.hProcess, 0xFFFFFFFF)
+        local exitCode = ffi.new("unsigned long[1]")
+        ffi.C.GetExitCodeProcess(processInfo.hProcess, exitCode)
+        ffi.C.CloseHandle(processInfo.hThread)
+        ffi.C.CloseHandle(processInfo.hProcess)
+        return true, tonumber(exitCode[0])
+    end
+
+    local result = os.execute(command)
+    return result == true or result == 0, result
+end
+
 while true do
     local message = requestChannel:demand()
 
@@ -28,25 +70,19 @@ while true do
     love.filesystem.remove(responseName)
 
     local command = string.format(
-        'curl.exe --silent --show-error --max-time 75 --request POST --header "Content-Type: application/json" --data-binary "@%s" --output "%s" --write-out "%%{http_code}" "%s" 2>&1',
+        'curl.exe --silent --show-error --fail-with-body --max-time 75 --request POST --header "Content-Type: application/json" --data-binary "@%s" --output "%s" "%s"',
         requestPath,
         responsePath,
         endpoint
     )
-    local process = io.popen(command, "r")
+    local started, exitCode = runCurlWithoutWindow(command)
+    local responseBody = love.filesystem.read(responseName) or ""
 
-    if not process then
+    if not started then
         responseChannel:push("0\n채팅 프로그램을 실행할 수 없습니다.")
+    elseif exitCode == 0 then
+        responseChannel:push("200\n" .. responseBody)
     else
-        local commandOutput = process:read("*a") or ""
-        process:close()
-        local statusCode = commandOutput:match("(%d%d%d)%s*$") or "0"
-        local responseBody = love.filesystem.read(responseName) or ""
-
-        if statusCode == "0" and commandOutput ~= "" then
-            responseBody = commandOutput
-        end
-
-        responseChannel:push(statusCode .. "\n" .. responseBody)
+        responseChannel:push("500\n" .. responseBody)
     end
 end

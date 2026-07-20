@@ -166,6 +166,12 @@ local chat = {
     input = "",
     composition = "",
     messages = {},
+    scrollY = 0,
+    contentHeight = 0,
+    viewportHeight = 0,
+    isBackspaceHeld = false,
+    backspaceRepeatTimer = 0,
+    backspaceRepeatStarted = false,
     isSending = false,
     threadErrorShown = false,
     thread = nil,
@@ -1464,6 +1470,7 @@ end
 
 local function addChatMessage(role, text)
     table.insert(chat.messages, {role = role, text = text})
+    chat.scrollY = 0
     while #chat.messages > 20 do
         table.remove(chat.messages, 1)
     end
@@ -1474,13 +1481,27 @@ local function openChatWindow()
     ui.isMenuOpen = false
     ui.isInteriorOpen = false
     chat.composition = ""
+    chat.isBackspaceHeld = false
+    chat.backspaceRepeatTimer = 0
+    chat.backspaceRepeatStarted = false
     love.keyboard.setTextInput(true)
 end
 
 local function closeChatWindow()
     ui.isChatOpen = false
     chat.composition = ""
+    chat.isBackspaceHeld = false
+    chat.backspaceRepeatTimer = 0
+    chat.backspaceRepeatStarted = false
     love.keyboard.setTextInput(false)
+end
+
+local function deleteLastChatCharacter()
+    local byteOffset = utf8.offset(chat.input, -1)
+
+    if byteOffset then
+        chat.input = chat.input:sub(1, byteOffset - 1)
+    end
 end
 
 local function sendChatMessage()
@@ -1750,10 +1771,10 @@ function love.keypressed(key)
             if chat.composition ~= "" then
                 return
             end
-            local byteOffset = utf8.offset(chat.input, -1)
-            if byteOffset then
-                chat.input = chat.input:sub(1, byteOffset - 1)
-            end
+            deleteLastChatCharacter()
+            chat.isBackspaceHeld = true
+            chat.backspaceRepeatTimer = 0
+            chat.backspaceRepeatStarted = false
         end
         return
     end
@@ -1781,6 +1802,14 @@ function love.keypressed(key)
     -- Tab 키를 누를 때마다 스마트폰 회전처럼 세로 모드와 가로 모드를 전환합니다.
     if key == "tab" then
         toggleOrientation()
+    end
+end
+
+function love.keyreleased(key)
+    if key == "backspace" then
+        chat.isBackspaceHeld = false
+        chat.backspaceRepeatTimer = 0
+        chat.backspaceRepeatStarted = false
     end
 end
 
@@ -1914,7 +1943,10 @@ function love.touchreleased(id, windowX, windowY, dx, dy, pressure)
 end
 
 function love.wheelmoved(x, y)
-    if ui.isInteriorOpen and ui.activeInteriorTab == "backgrounds" then
+    if ui.isChatOpen then
+        local maxScroll = math.max(0, chat.contentHeight - chat.viewportHeight)
+        chat.scrollY = clamp(chat.scrollY + y * 42, 0, maxScroll)
+    elseif ui.isInteriorOpen and ui.activeInteriorTab == "backgrounds" then
         ui.backgroundScrollX = ui.backgroundScrollX - y * 48 - x * 48
         clampBackgroundScroll()
     end
@@ -1952,6 +1984,24 @@ end
 -- 매 프레임마다 게임 상태를 갱신합니다.
 function love.update(dt)
     pollChatResponse()
+
+    if chat.isBackspaceHeld then
+        if not ui.isChatOpen or not love.keyboard.isDown("backspace") or chat.composition ~= "" then
+            chat.isBackspaceHeld = false
+            chat.backspaceRepeatTimer = 0
+            chat.backspaceRepeatStarted = false
+        else
+            chat.backspaceRepeatTimer = chat.backspaceRepeatTimer + dt
+            local repeatDelay = chat.backspaceRepeatStarted and 0.045 or 0.38
+
+            while chat.backspaceRepeatTimer >= repeatDelay do
+                chat.backspaceRepeatTimer = chat.backspaceRepeatTimer - repeatDelay
+                chat.backspaceRepeatStarted = true
+                deleteLastChatCharacter()
+                repeatDelay = 0.045
+            end
+        end
+    end
 
     if furnitureDrag.item then
         if love.mouse.isDown(1) then
@@ -2383,6 +2433,18 @@ local function drawDropdownMenu()
     love.graphics.printf("Chat", chatRect.x, chatRect.y + 12, chatRect.width, "center")
 end
 
+local function getSingleLineTextTail(text, maxWidth)
+    local font = love.graphics.getFont()
+    local visibleText = text:gsub("[\r\n]", " ")
+
+    while visibleText ~= "" and font:getWidth(visibleText) > maxWidth do
+        local nextCharacter = utf8.offset(visibleText, 2)
+        visibleText = nextCharacter and visibleText:sub(nextCharacter) or ""
+    end
+
+    return visibleText
+end
+
 local function drawChatWindow()
     if not ui.isChatOpen then
         return
@@ -2403,18 +2465,52 @@ local function drawChatWindow()
     love.graphics.setColor(0.18, 0.12, 0.09, 1)
     love.graphics.printf("X", closeRect.x, closeRect.y + 7, closeRect.width, "center")
 
-    local firstMessage = math.max(1, #chat.messages - 3)
-    local messageY = rect.y + 54
-    for index = firstMessage, #chat.messages do
+    local viewportX = rect.x + 12
+    local viewportY = rect.y + 50
+    local viewportWidth = rect.width - 24
+    local viewportBottom = inputRect.y - 28
+    local viewportHeight = viewportBottom - viewportY
+    local textWidth = rect.width - 110
+    local font = love.graphics.getFont()
+    local messageLayouts = {}
+    local totalHeight = 0
+
+    for index, message in ipairs(chat.messages) do
+        local _, wrappedLines = font:getWrap(message.text, textWidth)
+        local bubbleHeight = math.max(46, #wrappedLines * font:getHeight() + 16)
+        messageLayouts[index] = bubbleHeight
+        totalHeight = totalHeight + bubbleHeight + 6
+    end
+
+    chat.contentHeight = totalHeight
+    chat.viewportHeight = viewportHeight
+    chat.scrollY = clamp(chat.scrollY, 0, math.max(0, totalHeight - viewportHeight))
+    local messageY = viewportBottom - totalHeight + chat.scrollY
+    local oldScissorX, oldScissorY, oldScissorWidth, oldScissorHeight = love.graphics.getScissor()
+    love.graphics.setScissor(
+        screen.offsetX + viewportX * screen.scale,
+        screen.offsetY + viewportY * screen.scale,
+        viewportWidth * screen.scale,
+        viewportHeight * screen.scale
+    )
+
+    for index, message in ipairs(chat.messages) do
         local message = chat.messages[index]
         local label = message.role == "user" and "You" or (message.role == "assistant" and "Gemini" or "System")
         local bubbleColor = message.role == "user" and {0.95, 0.70, 0.66, 0.34} or {1, 1, 1, 0.58}
-        drawRoundedPanel(rect.x + 16, messageY, rect.width - 32, 46, 7, bubbleColor, nil)
+        local bubbleHeight = messageLayouts[index]
+        drawRoundedPanel(rect.x + 16, messageY, rect.width - 32, bubbleHeight, 7, bubbleColor, nil)
         love.graphics.setColor(0.34, 0.19, 0.14, 1)
         love.graphics.print(label .. ":", rect.x + 24, messageY + 6)
         love.graphics.setColor(0.16, 0.12, 0.10, 1)
-        love.graphics.printf(message.text, rect.x + 78, messageY + 6, rect.width - 110, "left")
-        messageY = messageY + 50
+        love.graphics.printf(message.text, rect.x + 78, messageY + 6, textWidth, "left")
+        messageY = messageY + bubbleHeight + 6
+    end
+
+    if oldScissorX then
+        love.graphics.setScissor(oldScissorX, oldScissorY, oldScissorWidth, oldScissorHeight)
+    else
+        love.graphics.setScissor()
     end
 
     if chat.isSending then
@@ -2426,7 +2522,8 @@ local function drawChatWindow()
     love.graphics.setColor(0.16, 0.12, 0.10, 1)
     local visibleInput = chat.input .. chat.composition
     local inputText = visibleInput ~= "" and visibleInput or "Type a message..."
-    love.graphics.printf(inputText, inputRect.x + 10, inputRect.y + 10, inputRect.width - 20, "left")
+    inputText = getSingleLineTextTail(inputText, inputRect.width - 20)
+    love.graphics.print(inputText, inputRect.x + 10, inputRect.y + 10)
 
     local sendColor = chat.isSending and {0.55, 0.52, 0.50, 0.75} or {0.95, 0.53, 0.50, 0.96}
     drawRoundedPanel(sendRect.x, sendRect.y, sendRect.width, sendRect.height, 7, sendColor, {0.46, 0.16, 0.14, 0.34})
