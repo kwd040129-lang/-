@@ -234,9 +234,9 @@ local furnitureLibrary = {
             minDepthScale = 0.62,
             maxDepthScale = 0.92,
             visualHeightScale = 1.28,
-            collisionInsetX = 0.06,
-            collisionTopPadding = 0.12,
-            collisionBottomPadding = 0.02,
+            collisionInsetX = 0.14,
+            collisionTopPadding = 0.22,
+            collisionBottomPadding = 0.22,
             blocksMovement = true,
             renderBehind = true
         }
