@@ -2661,6 +2661,8 @@ end
 local function drawSortedWorldObjects()
     local drawItems = {}
     local characterBounds = getCharacterVisualBounds()
+    local characterDepthY = (stairAction.active or stairAction.onTop) and math.huge or characterBounds.footY
+    local characterOcclusionBottom = nil
 
     if character.isDragging then
         table.insert(drawItems, {
@@ -2670,16 +2672,26 @@ local function drawSortedWorldObjects()
     else
         table.insert(drawItems, {
             kind = "character",
-            depthY = (stairAction.active or stairAction.onTop) and math.huge or characterBounds.footY
+            depthY = characterDepthY
         })
     end
 
     for _, item in ipairs(placedFurniture) do
         local bounds = getFurnitureVisualBounds(item)
+        local furnitureDepthY = item.renderBehind and -math.huge or bounds.footY
+
+        if item.blocksMovement ~= false
+            and characterDepthY < furnitureDepthY
+            and characterBounds.x < bounds.x + bounds.width
+            and characterBounds.x + characterBounds.width > bounds.x
+            and characterBounds.y < bounds.y + bounds.height then
+            local bottom = bounds.y + bounds.height
+            characterOcclusionBottom = characterOcclusionBottom and math.min(characterOcclusionBottom, bottom) or bottom
+        end
 
         table.insert(drawItems, {
             kind = "furniture",
-            depthY = item.renderBehind and -math.huge or bounds.footY,
+            depthY = furnitureDepthY,
             item = item
         })
     end
@@ -2690,8 +2702,25 @@ local function drawSortedWorldObjects()
 
     for _, entry in ipairs(drawItems) do
         if entry.kind == "character" then
-            drawCharacterShadow()
-            drawSpriteCharacter()
+            if characterOcclusionBottom then
+                local clipVirtualY = (characterOcclusionBottom - camera.y) * camera.zoom + virtualHeight * 0.5
+                local oldX, oldY, oldWidth, oldHeight = love.graphics.getScissor()
+                love.graphics.setScissor(
+                    screen.offsetX,
+                    screen.offsetY,
+                    virtualWidth * screen.scale,
+                    clamp(clipVirtualY, 0, virtualHeight) * screen.scale
+                )
+                drawSpriteCharacter()
+                if oldX then
+                    love.graphics.setScissor(oldX, oldY, oldWidth, oldHeight)
+                else
+                    love.graphics.setScissor()
+                end
+            else
+                drawCharacterShadow()
+                drawSpriteCharacter()
+            end
         elseif entry.kind == "character_shadow" then
             drawCharacterShadow()
         elseif entry.kind == "furniture" then
