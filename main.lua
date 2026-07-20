@@ -174,6 +174,7 @@ local chat = {
     backspaceRepeatStarted = false,
     portraitShowHistory = false,
     orientationBeforeOpen = nil,
+    characterStateBeforeOpen = nil,
     isSending = false,
     threadErrorShown = false,
     thread = nil,
@@ -1505,6 +1506,18 @@ end
 
 local function openChatWindow()
     chat.orientationBeforeOpen = currentOrientation
+    chat.characterStateBeforeOpen = {
+        x = character.x,
+        y = character.y,
+        isLanded = character.isLanded,
+        fallTargetY = character.fallTargetY,
+        fallSpeed = character.fallSpeed,
+        isMovingToTarget = character.isMovingToTarget,
+        targetX = character.targetX,
+        targetY = character.targetY,
+        movePath = character.movePath,
+        movePathIndex = character.movePathIndex
+    }
 
     if currentOrientation == "landscape" then
         toggleOrientation()
@@ -1534,7 +1547,23 @@ local function closeChatWindow()
         toggleOrientation()
     end
 
+    local savedState = chat.characterStateBeforeOpen
+    if savedState then
+        character.x = savedState.x
+        character.y = savedState.y
+        character.isLanded = savedState.isLanded
+        character.fallTargetY = savedState.fallTargetY
+        character.fallSpeed = savedState.fallSpeed
+        character.isMovingToTarget = savedState.isMovingToTarget
+        character.targetX = savedState.targetX
+        character.targetY = savedState.targetY
+        character.movePath = savedState.movePath
+        character.movePathIndex = savedState.movePathIndex
+        updateCamera(0, true)
+    end
+
     chat.orientationBeforeOpen = nil
+    chat.characterStateBeforeOpen = nil
 end
 
 local function deleteLastChatCharacter()
@@ -2045,6 +2074,12 @@ function love.update(dt)
                 repeatDelay = 0.045
             end
         end
+    end
+
+    -- 채팅 화면은 별도의 전체 화면 장면입니다. 대화 중에는 뒤쪽 방의
+    -- 이동과 낙하를 멈춰 열기 전 캐릭터 위치가 바뀌지 않게 합니다.
+    if ui.isChatOpen then
+        return
     end
 
     if furnitureDrag.item then
