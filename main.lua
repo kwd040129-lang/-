@@ -1503,6 +1503,10 @@ local function addChatMessage(role, text)
 end
 
 local function openChatWindow()
+    if currentOrientation == "landscape" then
+        toggleOrientation()
+    end
+
     ui.isChatOpen = true
     ui.isMenuOpen = false
     ui.isInteriorOpen = false
