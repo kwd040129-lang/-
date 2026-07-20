@@ -162,10 +162,17 @@ local ui = {
     isMenuOpen = false,
     isInteriorOpen = false,
     isChatOpen = false,
+    isRefrigeratorOpen = false,
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
     isBackgroundListDragging = false,
     backgroundDragLastX = 0
+}
+
+local refrigeratorStorage = {
+    columns = 5,
+    rows = 4,
+    slots = {}
 }
 
 local chat = {
@@ -698,6 +705,81 @@ local function getFurnitureCollisionRect(item)
         bounds.y + topPadding,
         bounds.width - marginX * 2,
         bounds.height - topPadding - bottomPadding
+end
+
+local function getNearbyRefrigerator()
+    if character.isDragging or stairAction.active or stairAction.onTop then
+        return nil
+    end
+
+    local characterBounds = getCharacterVisualBounds()
+
+    for _, item in ipairs(placedFurniture) do
+        if item.id == "refrigerator" then
+            local bounds = getFurnitureVisualBounds(item)
+            local horizontalDistance = math.abs(characterBounds.footX - bounds.footX)
+            local isInFront = characterBounds.groundFootY >= bounds.footY - 28
+                and characterBounds.groundFootY <= bounds.footY + 92
+            local isCloseEnough = horizontalDistance <= bounds.width * 0.72 + 34
+
+            if isInFront and isCloseEnough then
+                return item
+            end
+        end
+    end
+
+    return nil
+end
+
+local function getRefrigeratorOpenButtonRect(item)
+    local bounds = getFurnitureVisualBounds(item)
+    local centerX = (bounds.footX - camera.x) * camera.zoom + virtualWidth * 0.5
+    local bottomY = (bounds.footY - camera.y) * camera.zoom + virtualHeight * 0.5
+    local width = 116
+    local height = 34
+
+    return {
+        x = clamp(centerX - width * 0.5, 10, virtualWidth - width - 10),
+        y = clamp(bottomY + 12, 10, virtualHeight - height - 10),
+        width = width,
+        height = height
+    }
+end
+
+local function getRefrigeratorWindowRect()
+    local width = math.min(390, virtualWidth - 28)
+    local height = math.min(330, virtualHeight - 36)
+    return {
+        x = (virtualWidth - width) * 0.5,
+        y = (virtualHeight - height) * 0.5,
+        width = width,
+        height = height
+    }
+end
+
+local function getRefrigeratorCloseRect()
+    local rect = getRefrigeratorWindowRect()
+    return {
+        x = rect.x + rect.width - 42,
+        y = rect.y + 14,
+        width = 28,
+        height = 28
+    }
+end
+
+local function openRefrigeratorWindow()
+    ui.isRefrigeratorOpen = true
+    ui.isMenuOpen = false
+    character.isMovingToTarget = false
+    character.movePath = nil
+    sprite.isMovingByKeyboard = false
+    furnitureEdit.selectedItem = nil
+    furnitureEdit.isSizing = false
+    furnitureDrag.item = nil
+end
+
+local function closeRefrigeratorWindow()
+    ui.isRefrigeratorOpen = false
 end
 
 local function getFurnitureDeleteButtonRect(item)
@@ -2059,6 +2141,13 @@ local function closeInteriorWindow(shouldApply)
 end
 
 local function handleUiMousePressed(virtualX, virtualY)
+    if ui.isRefrigeratorOpen then
+        if isPointInsideRect(virtualX, virtualY, getRefrigeratorCloseRect()) then
+            closeRefrigeratorWindow()
+        end
+        return true
+    end
+
     if ui.isChatOpen then
         if isPointInsideRect(virtualX, virtualY, getChatCloseHitRect()) then
             closeChatWindow()
@@ -2158,6 +2247,14 @@ local function handleUiMousePressed(virtualX, virtualY)
         return true
     end
 
+    if not ui.isInteriorOpen and not ui.isChatOpen then
+        local refrigerator = getNearbyRefrigerator()
+        if refrigerator and isPointInsideRect(virtualX, virtualY, getRefrigeratorOpenButtonRect(refrigerator)) then
+            openRefrigeratorWindow()
+            return true
+        end
+    end
+
     if isPointInsideRect(virtualX, virtualY, getMenuButtonRect()) then
         ui.isMenuOpen = not ui.isMenuOpen
         return true
@@ -2249,6 +2346,13 @@ end
 
 -- 키보드를 눌렀을 때 실행됩니다.
 function love.keypressed(key)
+    if ui.isRefrigeratorOpen then
+        if key == "escape" then
+            closeRefrigeratorWindow()
+        end
+        return
+    end
+
     if ui.isChatOpen then
         if key == "escape" then
             closeChatWindow()
@@ -2508,6 +2612,10 @@ function love.update(dt)
     -- 채팅 화면은 별도의 전체 화면 장면입니다. 대화 중에는 뒤쪽 방의
     -- 이동과 낙하를 멈춰 열기 전 캐릭터 위치가 바뀌지 않게 합니다.
     if ui.isChatOpen then
+        return
+    end
+
+    if ui.isRefrigeratorOpen then
         return
     end
 
@@ -3464,11 +3572,74 @@ local function drawInteriorWindow()
     love.graphics.printf("OK", confirmRect.x, confirmRect.y + 9, confirmRect.width, "center")
 end
 
+local function drawRefrigeratorOpenPrompt()
+    if ui.isRefrigeratorOpen or ui.isInteriorOpen or ui.isChatOpen then
+        return
+    end
+
+    local refrigerator = getNearbyRefrigerator()
+    if not refrigerator then
+        return
+    end
+
+    local rect = getRefrigeratorOpenButtonRect(refrigerator)
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8, {0.91, 0.96, 0.98, 0.97}, {0.28, 0.48, 0.56, 0.52})
+    love.graphics.setColor(0.18, 0.31, 0.36, 1)
+    love.graphics.printf("냉장고 열기", rect.x, rect.y + 8, rect.width, "center")
+end
+
+local function drawRefrigeratorWindow()
+    if not ui.isRefrigeratorOpen then
+        return
+    end
+
+    local rect = getRefrigeratorWindowRect()
+    local closeRect = getRefrigeratorCloseRect()
+    local gap = 8
+    local horizontalPadding = 24
+    local topY = rect.y + 66
+    local availableWidth = rect.width - horizontalPadding * 2
+    local availableHeight = rect.height - 88
+    local cellSize = math.floor(math.min(
+        (availableWidth - gap * (refrigeratorStorage.columns - 1)) / refrigeratorStorage.columns,
+        (availableHeight - gap * (refrigeratorStorage.rows - 1)) / refrigeratorStorage.rows
+    ))
+    local gridWidth = cellSize * refrigeratorStorage.columns + gap * (refrigeratorStorage.columns - 1)
+    local gridHeight = cellSize * refrigeratorStorage.rows + gap * (refrigeratorStorage.rows - 1)
+    local gridX = rect.x + (rect.width - gridWidth) * 0.5
+    local gridY = topY + math.max(0, (availableHeight - gridHeight) * 0.5)
+
+    love.graphics.setColor(0, 0, 0, 0.48)
+    love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 12, {0.94, 0.97, 0.98, 0.99}, {0.25, 0.42, 0.48, 0.60})
+
+    love.graphics.setColor(0.16, 0.28, 0.33, 1)
+    love.graphics.print("냉장고 보관함", rect.x + 22, rect.y + 20)
+    love.graphics.setColor(0.34, 0.48, 0.53, 0.82)
+    love.graphics.printf("20칸", rect.x + 22, rect.y + 39, rect.width - 86, "left")
+
+    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7, {0.84, 0.91, 0.94, 0.96}, {0.25, 0.42, 0.48, 0.42})
+    love.graphics.setColor(0.18, 0.30, 0.35, 1)
+    love.graphics.printf("X", closeRect.x, closeRect.y + 6, closeRect.width, "center")
+
+    for row = 1, refrigeratorStorage.rows do
+        for column = 1, refrigeratorStorage.columns do
+            local slotX = gridX + (column - 1) * (cellSize + gap)
+            local slotY = gridY + (row - 1) * (cellSize + gap)
+            drawRoundedPanel(slotX, slotY, cellSize, cellSize, 6, {0.78, 0.87, 0.90, 0.96}, {0.28, 0.43, 0.49, 0.58})
+            love.graphics.setColor(1, 1, 1, 0.42)
+            love.graphics.rectangle("line", slotX + 3, slotY + 3, cellSize - 6, cellSize - 6, 4, 4)
+        end
+    end
+end
+
 local function drawUiLayer()
+    drawRefrigeratorOpenPrompt()
     drawMenuButton()
     drawDropdownMenu()
     drawInteriorWindow()
     drawChatWindow()
+    drawRefrigeratorWindow()
 end
 
 local function drawFloorDebugLine()
