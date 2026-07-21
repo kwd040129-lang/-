@@ -207,6 +207,13 @@ local backpackDrag = {
     y = 0
 }
 
+local droppedFoodItems = {}
+local worldFoodDrag = {
+    item = nil,
+    offsetX = 0,
+    offsetY = 0
+}
+
 local chat = {
     input = "",
     composition = "",
@@ -880,6 +887,57 @@ local function cancelBackpackDrag()
     backpackDrag.active = false
     backpackDrag.sourceIndex = nil
     backpackDrag.item = nil
+end
+
+local function createDroppedFood(item, worldX, worldY)
+    local size = 54
+    local groundY = clamp(worldY, getFloorTopY() + size * 0.5, roomWorldHeight - size * 0.5)
+    local dropped = {
+        id = item.id,
+        image = item.image,
+        fileName = item.fileName,
+        x = clamp(worldX, size * 0.5, roomWorldWidth - size * 0.5),
+        y = math.min(worldY, groundY),
+        groundY = groundY,
+        size = size,
+        fallSpeed = 0,
+        isDragging = false
+    }
+    table.insert(droppedFoodItems, dropped)
+    return dropped
+end
+
+local function findDroppedFoodAt(x, y)
+    for index = #droppedFoodItems, 1, -1 do
+        local item = droppedFoodItems[index]
+        local half = item.size * 0.5
+        if x >= item.x - half and x <= item.x + half
+            and y >= item.y - half and y <= item.y + half then
+            return item
+        end
+    end
+    return nil
+end
+
+local function updateDroppedFoodItems(dt)
+    for _, item in ipairs(droppedFoodItems) do
+        if item.isDragging then
+            local windowX, windowY = love.mouse.getPosition()
+            local viewX, viewY = windowToVirtual(windowX, windowY)
+            if isInsideViewport(viewX, viewY) then
+                local pointerX, pointerY = windowToWorld(windowX, windowY)
+                item.x = clamp(pointerX - worldFoodDrag.offsetX, item.size * 0.5, roomWorldWidth - item.size * 0.5)
+                item.y = clamp(pointerY - worldFoodDrag.offsetY, item.size * 0.5, roomWorldHeight - item.size * 0.5)
+                item.groundY = clamp(math.max(item.groundY, item.y), getFloorTopY() + item.size * 0.5, roomWorldHeight - item.size * 0.5)
+            end
+        elseif item.y < item.groundY then
+            item.fallSpeed = math.min(item.fallSpeed + 720 * dt, 680)
+            item.y = math.min(item.groundY, item.y + item.fallSpeed * dt)
+        else
+            item.y = item.groundY
+            item.fallSpeed = 0
+        end
+    end
 end
 
 local function openBackpackWindow()
@@ -2597,6 +2655,18 @@ function love.mousepressed(windowX, windowY, button)
             return
         end
 
+        local clickedFood = findDroppedFoodAt(pointerX, pointerY)
+        if clickedFood then
+            worldFoodDrag.item = clickedFood
+            worldFoodDrag.offsetX = pointerX - clickedFood.x
+            worldFoodDrag.offsetY = pointerY - clickedFood.y
+            clickedFood.isDragging = true
+            clickedFood.fallSpeed = 0
+            character.isMovingToTarget = false
+            character.movePath = nil
+            return
+        end
+
         if furnitureEdit.selectedItem then
             local deleteRect = getFurnitureDeleteButtonRect(furnitureEdit.selectedItem)
             local sizeRects = getFurnitureSizeButtonRects(furnitureEdit.selectedItem)
@@ -2687,6 +2757,15 @@ function love.mousereleased(windowX, windowY, button)
             local sourceIndex = backpackDrag.sourceIndex
             backpackStorage.slots[sourceIndex], backpackStorage.slots[targetIndex] =
                 backpackStorage.slots[targetIndex], backpackStorage.slots[sourceIndex]
+        elseif backpackDrag.sourceIndex and not isPointInsideRect(viewX, viewY, getBackpackWindowRect()) then
+            local sourceIndex = backpackDrag.sourceIndex
+            local item = backpackStorage.slots[sourceIndex]
+            if item then
+                local pointerX, pointerY = windowToWorld(windowX, windowY)
+                backpackStorage.slots[sourceIndex] = nil
+                createDroppedFood(item, pointerX, pointerY)
+                ui.isBackpackOpen = false
+            end
         end
         cancelBackpackDrag()
         return
@@ -2702,6 +2781,12 @@ function love.mousereleased(windowX, windowY, button)
         character.isDragging = false
         character.isLanded = character.y >= getFloorY()
         updateFallSpeedFromHeight()
+    end
+
+    if button == 1 and worldFoodDrag.item then
+        worldFoodDrag.item.isDragging = false
+        worldFoodDrag.item.fallSpeed = 0
+        worldFoodDrag.item = nil
     end
 end
 
@@ -2776,6 +2861,7 @@ end
 -- 매 프레임마다 게임 상태를 갱신합니다.
 function love.update(dt)
     pollChatResponse()
+    updateDroppedFoodItems(dt)
 
     if chat.isBackspaceHeld then
         if not ui.isChatOpen or not love.keyboard.isDown("backspace") or chat.composition ~= "" then
@@ -3192,6 +3278,28 @@ local function drawSpriteCharacter()
     end
 end
 
+local function drawDroppedFood(item, imageOnly)
+    if not item.image then
+        return
+    end
+
+    if not imageOnly then
+        local lift = math.max(0, item.groundY - item.y)
+        local alpha = clamp(0.20 * (1 - lift / 190), 0.04, 0.20)
+        love.graphics.setColor(0, 0, 0, alpha)
+        love.graphics.ellipse("fill", item.x, item.groundY + item.size * 0.36, item.size * 0.34, item.size * 0.10)
+        if item.isDragging then
+            return
+        end
+    end
+
+    local imageWidth = item.image:getWidth()
+    local imageHeight = item.image:getHeight()
+    local scale = math.min(item.size / imageWidth, item.size / imageHeight)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(item.image, item.x - imageWidth * scale * 0.5, item.y - imageHeight * scale * 0.5, 0, scale, scale)
+end
+
 -- 현재 가상 화면 안에 들어갈 게임 장면을 그립니다.
 local function drawSortedWorldObjects()
     local drawItems = {}
@@ -3227,6 +3335,15 @@ local function drawSortedWorldObjects()
         })
     end
 
+
+    for _, item in ipairs(droppedFoodItems) do
+        table.insert(drawItems, {
+            kind = "food",
+            depthY = item.groundY,
+            item = item
+        })
+    end
+
     table.sort(drawItems, function(a, b)
         return a.depthY < b.depthY
     end)
@@ -3239,6 +3356,8 @@ local function drawSortedWorldObjects()
             drawCharacterShadow()
         elseif entry.kind == "furniture" then
             drawFurnitureItem(entry.item)
+        elseif entry.kind == "food" then
+            drawDroppedFood(entry.item, false)
         end
     end
 
@@ -3246,6 +3365,11 @@ local function drawSortedWorldObjects()
     -- 그림자는 위의 깊이 정렬에 남겨 두어 원래 바닥 위치를 표현합니다.
     if character.isDragging then
         drawSpriteCharacter()
+    end
+
+
+    if worldFoodDrag.item then
+        drawDroppedFood(worldFoodDrag.item, true)
     end
 end
 
@@ -3855,7 +3979,13 @@ local function drawBackpackWindow()
     love.graphics.setColor(0.30, 0.18, 0.10, 1)
     love.graphics.print("가방", rect.x + 22, rect.y + 20)
     love.graphics.setColor(0.50, 0.35, 0.22, 0.90)
-    love.graphics.printf("16 / 20", rect.x + 22, rect.y + 39, rect.width - 86, "left")
+    local itemCount = 0
+    for slotIndex = 1, backpackStorage.columns * backpackStorage.rows do
+        if backpackStorage.slots[slotIndex] then
+            itemCount = itemCount + 1
+        end
+    end
+    love.graphics.printf(itemCount .. " / 20", rect.x + 22, rect.y + 39, rect.width - 86, "left")
 
     drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7, {0.92, 0.82, 0.65, 0.96}, {0.43, 0.27, 0.14, 0.44})
     love.graphics.setColor(0.31, 0.18, 0.10, 1)
