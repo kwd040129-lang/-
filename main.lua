@@ -248,7 +248,8 @@ local foodReaction = {
     kind = nil,
     timer = 0,
     lastTargetX = nil,
-    lastTargetY = nil
+    lastTargetY = nil,
+    escapeMoveY = 0
 }
 
 local chat = {
@@ -1094,6 +1095,7 @@ local function stopFoodReaction()
     foodReaction.timer = 0
     foodReaction.lastTargetX = nil
     foodReaction.lastTargetY = nil
+    foodReaction.escapeMoveY = 0
 end
 
 local function updateFoodReaction(dt)
@@ -1177,7 +1179,7 @@ local function updateFoodReaction(dt)
             local movesAwayInDepth = moveDeltaY * awayY > 0
             local validDepthDirection = depthThreat < 0.38
                 or not canMoveAwayInDepth
-                or movesAwayInDepth
+                or (movesAwayInDepth and depthMovement >= 60)
             if movementDistance > 28
                 and foodDistance > distance + 15
                 and validDepthDirection
@@ -1204,6 +1206,7 @@ local function updateFoodReaction(dt)
         foodReaction.lastTargetX = targetX
         foodReaction.lastTargetY = targetY
     end
+    foodReaction.escapeMoveY = reactionKind == "disliked" and (targetY - bounds.footY) or 0
     foodReaction.active = true
     foodReaction.kind = reactionKind
 end
@@ -3347,7 +3350,20 @@ function love.update(dt)
             animationMoveY = targetMoveY
         end
 
-        setAnimationFromMoveVector(animationMoveX, animationMoveY)
+        local useFoodEscapeDepthAnimation = moveX == 0 and moveY == 0
+            and foodReaction.active
+            and foodReaction.kind == "disliked"
+            and math.abs(foodReaction.escapeMoveY) >= 35
+
+        if useFoodEscapeDepthAnimation then
+            if foodReaction.escapeMoveY < 0 then
+                setCurrentAnimation("back")
+            else
+                setCurrentAnimation("front")
+            end
+        else
+            setAnimationFromMoveVector(animationMoveX, animationMoveY)
+        end
     else
         -- 이동을 멈추면 어느 방향에서 멈췄든 기본 대기 자세는 전면으로 고정합니다.
         setCurrentAnimation("front")
