@@ -223,6 +223,24 @@ local refrigeratorTransferDrag = {
     y = 0
 }
 
+local foodPreferences = {
+    liked = {
+        apple = true, strawberry = true, orange = true, bread = true,
+        cheese = true, yogurt = true, juice = true
+    },
+    disliked = {
+        carrot = true, broccoli = true
+    }
+}
+
+local foodReaction = {
+    active = false,
+    kind = nil,
+    timer = 0,
+    lastTargetX = nil,
+    lastTargetY = nil
+}
+
 local chat = {
     input = "",
     composition = "",
@@ -1031,6 +1049,78 @@ local function storeDroppedFoodInBackpack(item)
         end
     end
     return false
+end
+
+
+local function stopFoodReaction()
+    if foodReaction.active then
+        character.isMovingToTarget = false
+        character.movePath = nil
+    end
+    foodReaction.active = false
+    foodReaction.kind = nil
+    foodReaction.timer = 0
+    foodReaction.lastTargetX = nil
+    foodReaction.lastTargetY = nil
+end
+
+local function updateFoodReaction(dt)
+    local item = worldFoodDrag.item
+    if not item then
+        stopFoodReaction()
+        return
+    end
+
+    local reactionKind = foodPreferences.liked[item.id] and "liked"
+        or (foodPreferences.disliked[item.id] and "disliked" or nil)
+    if not reactionKind then
+        stopFoodReaction()
+        return
+    end
+
+    local bounds = getCharacterVisualBounds()
+    local deltaX = item.x - bounds.footX
+    local deltaY = item.groundY - bounds.footY
+    local distance = math.sqrt(deltaX * deltaX + deltaY * deltaY)
+    local activationDistance = reactionKind == "liked" and 235 or 195
+
+    if distance > activationDistance then
+        stopFoodReaction()
+        return
+    end
+
+    if reactionKind == "liked" and distance < 58 then
+        character.isMovingToTarget = false
+        character.movePath = nil
+        foodReaction.active = true
+        foodReaction.kind = reactionKind
+        return
+    end
+
+    foodReaction.timer = foodReaction.timer - dt
+    local targetX, targetY
+    if reactionKind == "liked" then
+        targetX = item.x
+        targetY = item.groundY
+    else
+        local safeDistance = math.max(distance, 1)
+        local awayX = -deltaX / safeDistance
+        local awayY = -deltaY / safeDistance
+        targetX = bounds.footX + awayX * 230
+        targetY = bounds.footY + awayY * 185
+    end
+
+    local targetChanged = not foodReaction.lastTargetX
+        or math.abs(targetX - foodReaction.lastTargetX) > 24
+        or math.abs(targetY - foodReaction.lastTargetY) > 24
+    if foodReaction.timer <= 0 or targetChanged or foodReaction.kind ~= reactionKind then
+        setMoveTarget(targetX, targetY)
+        foodReaction.timer = 0.18
+        foodReaction.lastTargetX = targetX
+        foodReaction.lastTargetY = targetY
+    end
+    foodReaction.active = true
+    foodReaction.kind = reactionKind
 end
 
 local function openBackpackWindow()
@@ -3009,6 +3099,7 @@ end
 function love.update(dt)
     pollChatResponse()
     updateDroppedFoodItems(dt)
+    updateFoodReaction(dt)
 
     if chat.isBackspaceHeld then
         if not ui.isChatOpen or not love.keyboard.isDown("backspace") or chat.composition ~= "" then
