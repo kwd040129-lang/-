@@ -1153,17 +1153,21 @@ local function updateFoodReaction(dt)
         for directionIndex = 0, 7 do
             local angle = baseAngle + directionIndex * math.pi * 0.25
             local candidateX = clamp(bounds.footX + math.cos(angle) * 230, minFootX, maxFootX)
-            local candidateY = clamp(bounds.footY + math.sin(angle) * 175, minFootY, maxFootY)
+            local candidateY = clamp(bounds.footY + math.sin(angle) * 225, minFootY, maxFootY)
             local moveDeltaX = candidateX - bounds.footX
             local moveDeltaY = candidateY - bounds.footY
             local movementDistance = math.sqrt(moveDeltaX * moveDeltaX + moveDeltaY * moveDeltaY)
             local foodDeltaX = candidateX - item.x
             local foodDeltaY = candidateY - item.groundY
             local foodDistance = math.sqrt(foodDeltaX * foodDeltaX + foodDeltaY * foodDeltaY)
-            local depthBonus = math.abs(moveDeltaY) * 0.18
-            local score = foodDistance + movementDistance * 0.72 + depthBonus
+            local depthMovement = math.abs(moveDeltaY)
+            local depthBonus = depthMovement * 0.85
+            if depthMovement >= 55 then
+                depthBonus = depthBonus + 70
+            end
+            local score = foodDistance + movementDistance * 0.58 + depthBonus
 
-            if movementDistance > 28 and score > bestScore then
+            if movementDistance > 28 and foodDistance > distance + 15 and score > bestScore then
                 bestScore = score
                 targetX = candidateX
                 targetY = candidateY
