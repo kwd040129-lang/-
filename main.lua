@@ -873,7 +873,7 @@ end
 local function getRefrigeratorCloseRect()
     local rect = getRefrigeratorWindowRect()
     return {
-        x = rect.x + rect.width - 42,
+        x = rect.x + rect.width - 54,
         y = rect.y + 14,
         width = 28,
         height = 28
@@ -4073,18 +4073,20 @@ local function drawRefrigeratorWindow()
 
     love.graphics.setColor(0, 0, 0, 0.48)
     love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
-    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 12, {0.94, 0.97, 0.98, 0.99}, {0.25, 0.42, 0.48, 0.60})
+    drawRoundedPanel(layouts.refrigerator.panelX, rect.y, layouts.refrigerator.panelWidth, rect.height,
+        12, {0.94, 0.97, 0.98, 0.99}, {0.25, 0.42, 0.48, 0.60})
+    drawRoundedPanel(layouts.backpack.panelX, rect.y, layouts.backpack.panelWidth, rect.height,
+        12, {0.98, 0.94, 0.84, 0.99}, {0.43, 0.27, 0.14, 0.62})
 
     love.graphics.setColor(0.16, 0.28, 0.33, 1)
     love.graphics.printf("냉장고", layouts.refrigerator.panelX, rect.y + 22, layouts.refrigerator.panelWidth, "center")
+    love.graphics.setColor(0.30, 0.18, 0.10, 1)
     love.graphics.printf("내 가방", layouts.backpack.panelX, rect.y + 22, layouts.backpack.panelWidth, "center")
 
-    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7, {0.84, 0.91, 0.94, 0.96}, {0.25, 0.42, 0.48, 0.42})
-    love.graphics.setColor(0.18, 0.30, 0.35, 1)
+    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7,
+        {0.92, 0.82, 0.65, 0.96}, {0.43, 0.27, 0.14, 0.44})
+    love.graphics.setColor(0.31, 0.18, 0.10, 1)
     love.graphics.printf("X", closeRect.x, closeRect.y + 6, closeRect.width, "center")
-
-    love.graphics.setColor(0.32, 0.46, 0.50, 0.32)
-    love.graphics.rectangle("fill", rect.x + rect.width * 0.5 - 1, rect.y + 58, 2, rect.height - 76)
 
     for storageName, layout in pairs(layouts) do
         local storage = storageName == "refrigerator" and refrigeratorStorage or backpackStorage
@@ -4094,9 +4096,19 @@ local function drawRefrigeratorWindow()
                 local slotX = layout.x + (column - 1) * (layout.cellSize + layout.gap)
                 local slotY = layout.y + (row - 1) * (layout.cellSize + layout.gap)
                 local isHovered = hoveredStorage == storageName and hoveredIndex == slotIndex
-                local fill = isHovered and {0.70, 0.88, 0.91, 1} or {0.78, 0.87, 0.90, 0.96}
-                drawRoundedPanel(slotX, slotY, layout.cellSize, layout.cellSize, 6, fill, {0.28, 0.43, 0.49, 0.58})
-                love.graphics.setColor(1, 1, 1, 0.42)
+                local normalFill = storageName == "refrigerator"
+                    and {0.78, 0.87, 0.90, 0.96} or {0.77, 0.66, 0.49, 0.92}
+                local hoverFill = storageName == "refrigerator"
+                    and {0.70, 0.88, 0.91, 1} or {0.91, 0.78, 0.50, 0.98}
+                local slotLine = storageName == "refrigerator"
+                    and {0.28, 0.43, 0.49, 0.58} or {0.40, 0.26, 0.14, 0.62}
+                local fill = isHovered and hoverFill or normalFill
+                drawRoundedPanel(slotX, slotY, layout.cellSize, layout.cellSize, 6, fill, slotLine)
+                if storageName == "refrigerator" then
+                    love.graphics.setColor(1, 1, 1, 0.42)
+                else
+                    love.graphics.setColor(1, 0.96, 0.86, 0.42)
+                end
                 love.graphics.rectangle("line", slotX + 3, slotY + 3, layout.cellSize - 6, layout.cellSize - 6, 4, 4)
 
                 local item = storage.slots[slotIndex]
