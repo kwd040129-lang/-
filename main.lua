@@ -165,6 +165,7 @@ local ui = {
     isChatOpen = false,
     isRefrigeratorOpen = false,
     isBackpackOpen = false,
+    isStatusOpen = false,
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
     isBackgroundListDragging = false,
@@ -175,6 +176,18 @@ local refrigeratorStorage = {
     columns = 5,
     rows = 4,
     slots = {}
+}
+
+local petStatus = {
+    hunger = 35,
+    thirst = 28,
+    fatigue = 40,
+    cleanliness = 85,
+    joy = 70,
+    sadness = 18,
+    loneliness = 22,
+    stress = 25,
+    affection = 60
 }
 
 local backpackStorage = {
@@ -1255,6 +1268,68 @@ local function closeBackpackWindow()
     ui.isBackpackOpen = false
 end
 
+local function getStatusWindowRect()
+    local width = math.min(410, virtualWidth - 28)
+    local height = math.min(408, virtualHeight - 32)
+    return {
+        x = (virtualWidth - width) * 0.5,
+        y = (virtualHeight - height) * 0.5,
+        width = width,
+        height = height
+    }
+end
+
+local function getStatusCloseRect()
+    local rect = getStatusWindowRect()
+    return {
+        x = rect.x + rect.width - 42,
+        y = rect.y + 14,
+        width = 28,
+        height = 28
+    }
+end
+
+local function getCurrentMood()
+    local positive = petStatus.joy + petStatus.affection * 0.35 + petStatus.cleanliness * 0.15
+    local negative = petStatus.sadness + petStatus.loneliness * 0.8
+        + petStatus.stress + petStatus.fatigue * 0.45
+        + petStatus.hunger * 0.35 + petStatus.thirst * 0.35
+    local score = positive - negative
+    if petStatus.fatigue >= 78 then
+        return "매우 졸림", {0.54, 0.47, 0.70, 1}
+    elseif petStatus.hunger >= 78 then
+        return "배고픔", {0.89, 0.52, 0.31, 1}
+    elseif petStatus.thirst >= 78 then
+        return "목마름", {0.30, 0.61, 0.80, 1}
+    elseif score >= 45 then
+        return "매우 행복함", {0.96, 0.55, 0.58, 1}
+    elseif score >= 10 then
+        return "기분 좋음", {0.95, 0.68, 0.37, 1}
+    elseif score >= -25 then
+        return "평범함", {0.54, 0.65, 0.58, 1}
+    elseif score >= -60 then
+        return "우울함", {0.40, 0.53, 0.72, 1}
+    end
+    return "매우 힘듦", {0.43, 0.43, 0.52, 1}
+end
+
+local function openStatusWindow()
+    ui.isStatusOpen = true
+    ui.isBackpackOpen = false
+    ui.isRefrigeratorOpen = false
+    ui.isMenuOpen = false
+    character.isMovingToTarget = false
+    character.movePath = nil
+    sprite.isMovingByKeyboard = false
+    furnitureDrag.item = nil
+    furnitureEdit.selectedItem = nil
+    furnitureEdit.isSizing = false
+end
+
+local function closeStatusWindow()
+    ui.isStatusOpen = false
+end
+
 local function getFurnitureDeleteButtonRect(item)
     local bounds = getFurnitureVisualBounds(item)
     local size = 24 / math.max(0.5, bounds.scale)
@@ -2296,6 +2371,15 @@ local function getBackpackButtonRect()
     }
 end
 
+local function getStatusButtonRect()
+    return {
+        x = virtualWidth - 158,
+        y = 18,
+        width = 42,
+        height = 42
+    }
+end
+
 local function getInteriorButtonRect()
     return {
         x = virtualWidth - 150,
@@ -2649,6 +2733,13 @@ local function closeInteriorWindow(shouldApply)
 end
 
 local function handleUiMousePressed(virtualX, virtualY)
+    if ui.isStatusOpen then
+        if isPointInsideRect(virtualX, virtualY, getStatusCloseRect()) then
+            closeStatusWindow()
+        end
+        return true
+    end
+
     if ui.isBackpackOpen then
         if isPointInsideRect(virtualX, virtualY, getBackpackCloseRect()) then
             closeBackpackWindow()
@@ -2802,6 +2893,11 @@ local function handleUiMousePressed(virtualX, virtualY)
         return true
     end
 
+    if isPointInsideRect(virtualX, virtualY, getStatusButtonRect()) then
+        openStatusWindow()
+        return true
+    end
+
     if ui.isMenuOpen then
         if isPointInsideRect(virtualX, virtualY, getInteriorButtonRect()) then
             openInteriorWindow()
@@ -2889,6 +2985,13 @@ end
 
 -- 키보드를 눌렀을 때 실행됩니다.
 function love.keypressed(key)
+    if ui.isStatusOpen then
+        if key == "escape" then
+            closeStatusWindow()
+        end
+        return
+    end
+
     if ui.isBackpackOpen then
         if key == "escape" then
             closeBackpackWindow()
@@ -3274,6 +3377,10 @@ function love.update(dt)
     end
 
     if ui.isBackpackOpen then
+        return
+    end
+
+    if ui.isStatusOpen then
         return
     end
 
@@ -3828,6 +3935,25 @@ local function drawBackpackButton()
     love.graphics.rectangle("fill", rect.x + 13, rect.y + 19, 16, 5, 2, 2)
     love.graphics.setColor(0.98, 0.84, 0.58, 1)
     love.graphics.rectangle("fill", rect.x + 18, rect.y + 25, 6, 5, 2, 2)
+end
+
+local function drawStatusButton()
+    local rect = getStatusButtonRect()
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8,
+        {0.98, 0.82, 0.84, 0.97}, {0.55, 0.22, 0.28, 0.56})
+
+    love.graphics.setColor(0.89, 0.34, 0.42, 1)
+    love.graphics.circle("fill", rect.x + 16, rect.y + 17, 7)
+    love.graphics.circle("fill", rect.x + 26, rect.y + 17, 7)
+    love.graphics.polygon("fill",
+        rect.x + 10, rect.y + 18,
+        rect.x + 32, rect.y + 18,
+        rect.x + 21, rect.y + 33)
+    love.graphics.setColor(1, 0.92, 0.90, 1)
+    love.graphics.setLineWidth(2)
+    love.graphics.line(rect.x + 12, rect.y + 22, rect.x + 17, rect.y + 22,
+        rect.x + 20, rect.y + 17, rect.x + 23, rect.y + 26,
+        rect.x + 26, rect.y + 22, rect.x + 31, rect.y + 22)
 end
 
 local function drawDropdownMenu()
@@ -4450,8 +4576,66 @@ local function drawBackpackWindow()
     end
 end
 
+local function drawStatusWindow()
+    if not ui.isStatusOpen then
+        return
+    end
+
+    local rect = getStatusWindowRect()
+    local closeRect = getStatusCloseRect()
+    local moodText, moodColor = getCurrentMood()
+    local metrics = {
+        {label = "배고픔", value = petStatus.hunger, color = {0.91, 0.51, 0.34, 1}},
+        {label = "목마름", value = petStatus.thirst, color = {0.34, 0.65, 0.85, 1}},
+        {label = "피로도", value = petStatus.fatigue, color = {0.57, 0.49, 0.73, 1}},
+        {label = "청결도", value = petStatus.cleanliness, color = {0.40, 0.76, 0.72, 1}},
+        {label = "기쁨", value = petStatus.joy, color = {0.97, 0.64, 0.35, 1}},
+        {label = "슬픔", value = petStatus.sadness, color = {0.39, 0.56, 0.78, 1}},
+        {label = "외로움", value = petStatus.loneliness, color = {0.60, 0.53, 0.69, 1}},
+        {label = "스트레스", value = petStatus.stress, color = {0.88, 0.42, 0.45, 1}},
+        {label = "친밀도", value = petStatus.affection, color = {0.94, 0.47, 0.58, 1}}
+    }
+
+    love.graphics.setColor(0, 0, 0, 0.48)
+    love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 12,
+        {0.99, 0.94, 0.92, 0.99}, {0.56, 0.27, 0.30, 0.55})
+
+    love.graphics.setColor(0.31, 0.16, 0.17, 1)
+    love.graphics.print("캐릭터 상태", rect.x + 22, rect.y + 18)
+    love.graphics.setColor(moodColor)
+    love.graphics.printf("현재 기분: " .. moodText, rect.x + 22, rect.y + 46, rect.width - 44, "left")
+
+    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7,
+        {0.94, 0.79, 0.80, 0.98}, {0.55, 0.25, 0.29, 0.46})
+    love.graphics.setColor(0.39, 0.19, 0.21, 1)
+    love.graphics.printf("X", closeRect.x, closeRect.y + 6, closeRect.width, "center")
+
+    local startY = rect.y + 82
+    local rowHeight = (rect.height - 96) / #metrics
+    local labelWidth = math.min(78, rect.width * 0.24)
+    local barX = rect.x + 22 + labelWidth
+    local barWidth = rect.width - labelWidth - 76
+
+    for index, metric in ipairs(metrics) do
+        local rowY = startY + (index - 1) * rowHeight
+        love.graphics.setColor(0.31, 0.21, 0.20, 1)
+        love.graphics.print(metric.label, rect.x + 22, rowY + 4)
+
+        love.graphics.setColor(0.75, 0.68, 0.65, 0.34)
+        love.graphics.rectangle("fill", barX, rowY + 7, barWidth, 12, 6, 6)
+        love.graphics.setColor(metric.color)
+        love.graphics.rectangle("fill", barX, rowY + 7,
+            barWidth * clamp(metric.value / 100, 0, 1), 12, 6, 6)
+        love.graphics.setColor(0.40, 0.28, 0.27, 0.92)
+        love.graphics.printf(math.floor(metric.value) .. "%",
+            barX + barWidth + 6, rowY + 3, 42, "right")
+    end
+end
+
 local function drawUiLayer()
     drawRefrigeratorOpenPrompt()
+    drawStatusButton()
     drawBackpackButton()
     drawMenuButton()
     drawDropdownMenu()
@@ -4459,6 +4643,7 @@ local function drawUiLayer()
     drawChatWindow()
     drawRefrigeratorWindow()
     drawBackpackWindow()
+    drawStatusWindow()
 end
 
 local function drawFloorDebugLine()
