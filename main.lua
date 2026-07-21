@@ -1132,14 +1132,49 @@ local function updateFoodReaction(dt)
     foodReaction.timer = foodReaction.timer - dt
     local targetX, targetY
     if reactionKind == "liked" then
-        targetX = item.x
-        targetY = item.groundY
+        local safeDistance = math.max(distance, 1)
+        local approachX = deltaX / safeDistance
+        local approachY = deltaY / safeDistance
+        targetX = item.x - approachX * 58
+        targetY = item.groundY - approachY * 58
     else
         local safeDistance = math.max(distance, 1)
         local awayX = -deltaX / safeDistance
         local awayY = -deltaY / safeDistance
-        targetX = bounds.footX + awayX * 230
-        targetY = bounds.footY + awayY * 185
+        local baseAngle = math.atan2(awayY, awayX)
+        local minFootX = character.width * 0.5
+        local maxFootX = roomWorldWidth - character.width * 0.5
+        local minFootY = getMinCharacterFloorY() + character.height
+        local maxFootY = getWorldFloorY() + character.height
+        local bestScore = -math.huge
+
+        -- 정반대 방향이 벽에 막혀도 앞/뒤 대각선으로 빠져나갈 수 있도록
+        -- 8방향 후보 중 실제 이동 거리와 음식으로부터의 거리가 큰 곳을 고릅니다.
+        for directionIndex = 0, 7 do
+            local angle = baseAngle + directionIndex * math.pi * 0.25
+            local candidateX = clamp(bounds.footX + math.cos(angle) * 230, minFootX, maxFootX)
+            local candidateY = clamp(bounds.footY + math.sin(angle) * 175, minFootY, maxFootY)
+            local moveDeltaX = candidateX - bounds.footX
+            local moveDeltaY = candidateY - bounds.footY
+            local movementDistance = math.sqrt(moveDeltaX * moveDeltaX + moveDeltaY * moveDeltaY)
+            local foodDeltaX = candidateX - item.x
+            local foodDeltaY = candidateY - item.groundY
+            local foodDistance = math.sqrt(foodDeltaX * foodDeltaX + foodDeltaY * foodDeltaY)
+            local depthBonus = math.abs(moveDeltaY) * 0.18
+            local score = foodDistance + movementDistance * 0.72 + depthBonus
+
+            if movementDistance > 28 and score > bestScore then
+                bestScore = score
+                targetX = candidateX
+                targetY = candidateY
+            end
+        end
+
+        if not targetX then
+            targetX = bounds.footX
+            targetY = clamp(bounds.footY + (bounds.footY < roomWorldHeight * 0.72 and 150 or -150),
+                minFootY, maxFootY)
+        end
     end
 
     local targetChanged = not foodReaction.lastTargetX
@@ -1147,7 +1182,7 @@ local function updateFoodReaction(dt)
         or math.abs(targetY - foodReaction.lastTargetY) > 24
     if foodReaction.timer <= 0 or targetChanged or foodReaction.kind ~= reactionKind then
         setMoveTarget(targetX, targetY)
-        foodReaction.timer = 0.18
+        foodReaction.timer = reactionKind == "disliked" and 0.28 or 0.18
         foodReaction.lastTargetX = targetX
         foodReaction.lastTargetY = targetY
     end
