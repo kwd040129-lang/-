@@ -2762,6 +2762,9 @@ function love.mousepressed(windowX, windowY, button)
 
         local clickedFood = findDroppedFoodAt(pointerX, pointerY)
         if clickedFood then
+            furnitureDrag.item = nil
+            furnitureEdit.selectedItem = nil
+            furnitureEdit.isSizing = false
             worldFoodDrag.item = clickedFood
             worldFoodDrag.offsetX = pointerX - clickedFood.x
             worldFoodDrag.offsetY = pointerY - clickedFood.y
@@ -3043,7 +3046,9 @@ function love.update(dt)
         return
     end
 
-    if furnitureDrag.item then
+    if worldFoodDrag.item then
+        furnitureDrag.item = nil
+    elseif furnitureDrag.item then
         if love.mouse.isDown(1) then
             local windowX, windowY = love.mouse.getPosition()
             local viewX, viewY = windowToVirtual(windowX, windowY)
@@ -3057,7 +3062,10 @@ function love.update(dt)
         else
             furnitureDrag.item = nil
         end
-    elseif love.mouse.isDown(1) and not ui.isInteriorOpen and not character.isDragging then
+    elseif love.mouse.isDown(1)
+        and not ui.isInteriorOpen
+        and not character.isDragging
+        and not worldFoodDrag.item then
         local windowX, windowY = love.mouse.getPosition()
         local viewX, viewY = windowToVirtual(windowX, windowY)
         local pointerX, pointerY = windowToWorld(windowX, windowY)
