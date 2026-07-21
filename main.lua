@@ -251,7 +251,8 @@ local foodReaction = {
     lastTargetX = nil,
     lastTargetY = nil,
     lastFoodX = nil,
-    lastFoodY = nil
+    lastFoodY = nil,
+    boundaryEscape = false
 }
 
 local chat = {
@@ -1099,6 +1100,7 @@ local function stopFoodReaction()
     foodReaction.lastTargetY = nil
     foodReaction.lastFoodX = nil
     foodReaction.lastFoodY = nil
+    foodReaction.boundaryEscape = false
 end
 
 local function updateFoodReaction(dt)
@@ -1142,6 +1144,7 @@ local function updateFoodReaction(dt)
 
     foodReaction.timer = foodReaction.timer - dt
     local targetX, targetY
+    local usedBoundaryEscape = false
     if reactionKind == "liked" then
         local safeDistance = math.max(distance, 1)
         local approachX = deltaX / safeDistance
@@ -1154,8 +1157,28 @@ local function updateFoodReaction(dt)
         local approachY = deltaY / safeDistance
         -- 좋아하는 음식은 +방향으로 따라가고, 싫어하는 음식은 같은 벡터의
         -- 부호만 뒤집어 정확히 정반대 방향으로 이동합니다.
-        targetX = bounds.footX - approachX * 230
-        targetY = bounds.footY - approachY * 230
+        local rawTargetX = bounds.footX - approachX * 230
+        local rawTargetY = bounds.footY - approachY * 230
+        local minFootX = character.width * 0.5
+        local maxFootX = roomWorldWidth - character.width * 0.5
+        local minFootY = getMinCharacterFloorY() + character.height
+        local maxFootY = getWorldFloorY() + character.height
+        targetX = clamp(rawTargetX, minFootX, maxFootX)
+        targetY = clamp(rawTargetY, minFootY, maxFootY)
+
+        local availableMoveX = targetX - bounds.footX
+        local availableMoveY = targetY - bounds.footY
+        local availableDistance = math.sqrt(availableMoveX * availableMoveX + availableMoveY * availableMoveY)
+        local depthDirectionBlocked = math.abs(approachY) >= 0.24 and math.abs(availableMoveY) < 34
+
+        -- 정반대 방향이 앞/뒤 경계에 막힌 경우에는 옆으로만 미끄러지지 않고
+        -- 먼저 반대 깊이 쪽으로 빠져나온 뒤 일반 반대 벡터 회피로 돌아갑니다.
+        if depthDirectionBlocked or availableDistance < 42 then
+            local middleFootY = (minFootY + maxFootY) * 0.5
+            targetX = bounds.footX
+            targetY = bounds.footY <= middleFootY and (maxFootY - 24) or (minFootY + 24)
+            usedBoundaryEscape = true
+        end
     end
 
     local targetChanged = not foodReaction.lastTargetX
@@ -1173,7 +1196,9 @@ local function updateFoodReaction(dt)
     if reactionKind == "disliked" then
         shouldReplan = reactionChanged
             or not character.isMovingToTarget
-            or (foodReaction.timer <= 0 and foodMovedDistance >= 42)
+            or (not foodReaction.boundaryEscape
+                and foodReaction.timer <= 0
+                and foodMovedDistance >= 42)
     else
         shouldReplan = reactionChanged or foodReaction.timer <= 0 or targetChanged
     end
@@ -1185,6 +1210,7 @@ local function updateFoodReaction(dt)
         foodReaction.lastTargetY = targetY
         foodReaction.lastFoodX = item.x
         foodReaction.lastFoodY = item.groundY
+        foodReaction.boundaryEscape = reactionKind == "disliked" and usedBoundaryEscape
     end
     foodReaction.active = true
     foodReaction.kind = reactionKind
