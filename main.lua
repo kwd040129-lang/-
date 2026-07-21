@@ -163,6 +163,7 @@ local ui = {
     isInteriorOpen = false,
     isChatOpen = false,
     isRefrigeratorOpen = false,
+    isBackpackOpen = false,
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
     isBackgroundListDragging = false,
@@ -173,6 +174,29 @@ local refrigeratorStorage = {
     columns = 5,
     rows = 4,
     slots = {}
+}
+
+local backpackStorage = {
+    columns = 5,
+    rows = 4,
+    slots = {
+        {id = "apple", fileName = "items/food/apple.png"},
+        {id = "strawberry", fileName = "items/food/strawberry.png"},
+        {id = "orange", fileName = "items/food/orange.png"},
+        {id = "tomato", fileName = "items/food/tomato.png"},
+        {id = "carrot", fileName = "items/food/carrot.png"},
+        {id = "broccoli", fileName = "items/food/broccoli.png"},
+        {id = "egg", fileName = "items/food/egg.png"},
+        {id = "milk", fileName = "items/food/milk.png"},
+        {id = "cheese", fileName = "items/food/cheese.png"},
+        {id = "butter", fileName = "items/food/butter.png"},
+        {id = "yogurt", fileName = "items/food/yogurt.png"},
+        {id = "bread", fileName = "items/food/bread.png"},
+        {id = "fish", fileName = "items/food/fish.png"},
+        {id = "steak", fileName = "items/food/steak.png"},
+        {id = "water", fileName = "items/food/water.png"},
+        {id = "juice", fileName = "items/food/juice.png"}
+    }
 }
 
 local chat = {
@@ -785,6 +809,43 @@ end
 
 local function closeRefrigeratorWindow()
     ui.isRefrigeratorOpen = false
+end
+
+local function getBackpackWindowRect()
+    local width = math.min(390, virtualWidth - 28)
+    local height = math.min(330, virtualHeight - 36)
+    return {
+        x = (virtualWidth - width) * 0.5,
+        y = (virtualHeight - height) * 0.5,
+        width = width,
+        height = height
+    }
+end
+
+local function getBackpackCloseRect()
+    local rect = getBackpackWindowRect()
+    return {
+        x = rect.x + rect.width - 42,
+        y = rect.y + 14,
+        width = 28,
+        height = 28
+    }
+end
+
+local function openBackpackWindow()
+    ui.isBackpackOpen = true
+    ui.isRefrigeratorOpen = false
+    ui.isMenuOpen = false
+    character.isMovingToTarget = false
+    character.movePath = nil
+    sprite.isMovingByKeyboard = false
+    furnitureEdit.selectedItem = nil
+    furnitureEdit.isSizing = false
+    furnitureDrag.item = nil
+end
+
+local function closeBackpackWindow()
+    ui.isBackpackOpen = false
 end
 
 local function getFurnitureDeleteButtonRect(item)
@@ -1529,6 +1590,19 @@ local function loadFurnitureLibrary()
     end
 end
 
+local function loadBackpackItems()
+    for _, item in ipairs(backpackStorage.slots) do
+        item.image = nil
+        if love.filesystem.getInfo(item.fileName) then
+            local success, imageOrError = pcall(love.graphics.newImage, item.fileName)
+            if success then
+                item.image = imageOrError
+                item.image:setFilter("linear", "linear")
+            end
+        end
+    end
+end
+
 local function loadWindowViews()
     for _, view in pairs(windowViews) do
         view.image = nil
@@ -1787,6 +1861,15 @@ end
 local function getMenuButtonRect()
     return {
         x = virtualWidth - 58,
+        y = 18,
+        width = 42,
+        height = 42
+    }
+end
+
+local function getBackpackButtonRect()
+    return {
+        x = virtualWidth - 108,
         y = 18,
         width = 42,
         height = 42
@@ -2146,6 +2229,13 @@ local function closeInteriorWindow(shouldApply)
 end
 
 local function handleUiMousePressed(virtualX, virtualY)
+    if ui.isBackpackOpen then
+        if isPointInsideRect(virtualX, virtualY, getBackpackCloseRect()) then
+            closeBackpackWindow()
+        end
+        return true
+    end
+
     if ui.isRefrigeratorOpen then
         if isPointInsideRect(virtualX, virtualY, getRefrigeratorCloseRect()) then
             closeRefrigeratorWindow()
@@ -2265,6 +2355,11 @@ local function handleUiMousePressed(virtualX, virtualY)
         return true
     end
 
+    if isPointInsideRect(virtualX, virtualY, getBackpackButtonRect()) then
+        openBackpackWindow()
+        return true
+    end
+
     if ui.isMenuOpen then
         if isPointInsideRect(virtualX, virtualY, getInteriorButtonRect()) then
             openInteriorWindow()
@@ -2324,6 +2419,7 @@ function love.load()
     -- 좌우 스프라이트 이미지와 셰이더를 먼저 준비합니다.
     loadAllAnimations()
     loadFurnitureLibrary()
+    loadBackpackItems()
     loadWindowViews()
     loadBackgroundLibrary()
     loadRoomBackground()
@@ -2351,6 +2447,13 @@ end
 
 -- 키보드를 눌렀을 때 실행됩니다.
 function love.keypressed(key)
+    if ui.isBackpackOpen then
+        if key == "escape" then
+            closeBackpackWindow()
+        end
+        return
+    end
+
     if ui.isRefrigeratorOpen then
         if key == "escape" then
             closeRefrigeratorWindow()
@@ -2621,6 +2724,10 @@ function love.update(dt)
     end
 
     if ui.isRefrigeratorOpen then
+        return
+    end
+
+    if ui.isBackpackOpen then
         return
     end
 
@@ -3108,6 +3215,20 @@ local function drawMenuButton()
     love.graphics.line(rect.x + 11, rect.y + 13, rect.x + rect.width - 11, rect.y + 13)
     love.graphics.line(rect.x + 11, rect.y + 21, rect.x + rect.width - 11, rect.y + 21)
     love.graphics.line(rect.x + 11, rect.y + 29, rect.x + rect.width - 11, rect.y + 29)
+end
+
+local function drawBackpackButton()
+    local rect = getBackpackButtonRect()
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8, {0.97, 0.86, 0.70, 0.96}, {0.42, 0.25, 0.13, 0.52})
+
+    love.graphics.setColor(0.45, 0.25, 0.12, 1)
+    love.graphics.setLineWidth(2.2)
+    love.graphics.arc("line", "open", rect.x + 21, rect.y + 15, 8, math.pi, math.pi * 2)
+    love.graphics.rectangle("fill", rect.x + 10, rect.y + 16, 22, 18, 5, 5)
+    love.graphics.setColor(0.94, 0.67, 0.36, 1)
+    love.graphics.rectangle("fill", rect.x + 13, rect.y + 19, 16, 5, 2, 2)
+    love.graphics.setColor(0.98, 0.84, 0.58, 1)
+    love.graphics.rectangle("fill", rect.x + 18, rect.y + 25, 6, 5, 2, 2)
 end
 
 local function drawDropdownMenu()
@@ -3638,13 +3759,67 @@ local function drawRefrigeratorWindow()
     end
 end
 
+local function drawBackpackWindow()
+    if not ui.isBackpackOpen then
+        return
+    end
+
+    local rect = getBackpackWindowRect()
+    local closeRect = getBackpackCloseRect()
+    local gap = 8
+    local horizontalPadding = 24
+    local topY = rect.y + 66
+    local availableWidth = rect.width - horizontalPadding * 2
+    local availableHeight = rect.height - 88
+    local cellSize = math.floor(math.min(
+        (availableWidth - gap * (backpackStorage.columns - 1)) / backpackStorage.columns,
+        (availableHeight - gap * (backpackStorage.rows - 1)) / backpackStorage.rows
+    ))
+    local gridWidth = cellSize * backpackStorage.columns + gap * (backpackStorage.columns - 1)
+    local gridHeight = cellSize * backpackStorage.rows + gap * (backpackStorage.rows - 1)
+    local gridX = rect.x + (rect.width - gridWidth) * 0.5
+    local gridY = topY + math.max(0, (availableHeight - gridHeight) * 0.5)
+
+    love.graphics.setColor(0, 0, 0, 0.48)
+    love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 12, {0.98, 0.94, 0.84, 0.99}, {0.43, 0.27, 0.14, 0.62})
+
+    love.graphics.setColor(0.30, 0.18, 0.10, 1)
+    love.graphics.print("가방", rect.x + 22, rect.y + 20)
+    love.graphics.setColor(0.50, 0.35, 0.22, 0.90)
+    love.graphics.printf("16 / 20", rect.x + 22, rect.y + 39, rect.width - 86, "left")
+
+    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7, {0.92, 0.82, 0.65, 0.96}, {0.43, 0.27, 0.14, 0.44})
+    love.graphics.setColor(0.31, 0.18, 0.10, 1)
+    love.graphics.printf("X", closeRect.x, closeRect.y + 6, closeRect.width, "center")
+
+    for row = 1, backpackStorage.rows do
+        for column = 1, backpackStorage.columns do
+            local slotIndex = (row - 1) * backpackStorage.columns + column
+            local slotX = gridX + (column - 1) * (cellSize + gap)
+            local slotY = gridY + (row - 1) * (cellSize + gap)
+            drawRoundedPanel(slotX, slotY, cellSize, cellSize, 6, {0.77, 0.66, 0.49, 0.92}, {0.40, 0.26, 0.14, 0.62})
+            love.graphics.setColor(1, 0.96, 0.86, 0.42)
+            love.graphics.rectangle("line", slotX + 3, slotY + 3, cellSize - 6, cellSize - 6, 4, 4)
+
+            local item = backpackStorage.slots[slotIndex]
+            if item and item.image then
+                local padding = math.max(3, math.floor(cellSize * 0.08))
+                drawImageContained(item.image, slotX + padding, slotY + padding, cellSize - padding * 2, cellSize - padding * 2)
+            end
+        end
+    end
+end
+
 local function drawUiLayer()
     drawRefrigeratorOpenPrompt()
+    drawBackpackButton()
     drawMenuButton()
     drawDropdownMenu()
     drawInteriorWindow()
     drawChatWindow()
     drawRefrigeratorWindow()
+    drawBackpackWindow()
 end
 
 local function drawFloorDebugLine()
