@@ -189,6 +189,7 @@ local petStatus = {
     stress = 25,
     affection = 60
 }
+local statusUi = {}
 
 local backpackStorage = {
     columns = 5,
@@ -1268,7 +1269,7 @@ local function closeBackpackWindow()
     ui.isBackpackOpen = false
 end
 
-local function getStatusWindowRect()
+function statusUi.getWindowRect()
     local width = math.min(410, virtualWidth - 28)
     local height = math.min(408, virtualHeight - 32)
     return {
@@ -1279,8 +1280,8 @@ local function getStatusWindowRect()
     }
 end
 
-local function getStatusCloseRect()
-    local rect = getStatusWindowRect()
+function statusUi.getCloseRect()
+    local rect = statusUi.getWindowRect()
     return {
         x = rect.x + rect.width - 42,
         y = rect.y + 14,
@@ -1289,7 +1290,7 @@ local function getStatusCloseRect()
     }
 end
 
-local function getCurrentMood()
+function statusUi.getCurrentMood()
     local positive = petStatus.joy + petStatus.affection * 0.35 + petStatus.cleanliness * 0.15
     local negative = petStatus.sadness + petStatus.loneliness * 0.8
         + petStatus.stress + petStatus.fatigue * 0.45
@@ -1313,7 +1314,7 @@ local function getCurrentMood()
     return "매우 힘듦", {0.43, 0.43, 0.52, 1}
 end
 
-local function openStatusWindow()
+function statusUi.open()
     ui.isStatusOpen = true
     ui.isBackpackOpen = false
     ui.isRefrigeratorOpen = false
@@ -1326,7 +1327,7 @@ local function openStatusWindow()
     furnitureEdit.isSizing = false
 end
 
-local function closeStatusWindow()
+function statusUi.close()
     ui.isStatusOpen = false
 end
 
@@ -2371,7 +2372,7 @@ local function getBackpackButtonRect()
     }
 end
 
-local function getStatusButtonRect()
+function statusUi.getButtonRect()
     return {
         x = virtualWidth - 158,
         y = 18,
@@ -2734,8 +2735,8 @@ end
 
 local function handleUiMousePressed(virtualX, virtualY)
     if ui.isStatusOpen then
-        if isPointInsideRect(virtualX, virtualY, getStatusCloseRect()) then
-            closeStatusWindow()
+        if isPointInsideRect(virtualX, virtualY, statusUi.getCloseRect()) then
+            statusUi.close()
         end
         return true
     end
@@ -2893,8 +2894,8 @@ local function handleUiMousePressed(virtualX, virtualY)
         return true
     end
 
-    if isPointInsideRect(virtualX, virtualY, getStatusButtonRect()) then
-        openStatusWindow()
+    if isPointInsideRect(virtualX, virtualY, statusUi.getButtonRect()) then
+        statusUi.open()
         return true
     end
 
@@ -2987,7 +2988,7 @@ end
 function love.keypressed(key)
     if ui.isStatusOpen then
         if key == "escape" then
-            closeStatusWindow()
+            statusUi.close()
         end
         return
     end
@@ -3937,8 +3938,8 @@ local function drawBackpackButton()
     love.graphics.rectangle("fill", rect.x + 18, rect.y + 25, 6, 5, 2, 2)
 end
 
-local function drawStatusButton()
-    local rect = getStatusButtonRect()
+function statusUi.drawButton()
+    local rect = statusUi.getButtonRect()
     drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8,
         {0.98, 0.82, 0.84, 0.97}, {0.55, 0.22, 0.28, 0.56})
 
@@ -4576,14 +4577,14 @@ local function drawBackpackWindow()
     end
 end
 
-local function drawStatusWindow()
+function statusUi.drawWindow()
     if not ui.isStatusOpen then
         return
     end
 
-    local rect = getStatusWindowRect()
-    local closeRect = getStatusCloseRect()
-    local moodText, moodColor = getCurrentMood()
+    local rect = statusUi.getWindowRect()
+    local closeRect = statusUi.getCloseRect()
+    local moodText, moodColor = statusUi.getCurrentMood()
     local metrics = {
         {label = "배고픔", value = petStatus.hunger, color = {0.91, 0.51, 0.34, 1}},
         {label = "목마름", value = petStatus.thirst, color = {0.34, 0.65, 0.85, 1}},
@@ -4635,7 +4636,7 @@ end
 
 local function drawUiLayer()
     drawRefrigeratorOpenPrompt()
-    drawStatusButton()
+    statusUi.drawButton()
     drawBackpackButton()
     drawMenuButton()
     drawDropdownMenu()
@@ -4643,7 +4644,7 @@ local function drawUiLayer()
     drawChatWindow()
     drawRefrigeratorWindow()
     drawBackpackWindow()
-    drawStatusWindow()
+    statusUi.drawWindow()
 end
 
 local function drawFloorDebugLine()
