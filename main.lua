@@ -1147,6 +1147,8 @@ local function updateFoodReaction(dt)
         local minFootY = getMinCharacterFloorY() + character.height
         local maxFootY = getWorldFloorY() + character.height
         local bestScore = -math.huge
+        local canMoveAwayInDepth = (awayY < 0 and bounds.footY > minFootY + 30)
+            or (awayY > 0 and bounds.footY < maxFootY - 30)
 
         -- 정반대 방향이 벽에 막혀도 앞/뒤 대각선으로 빠져나갈 수 있도록
         -- 8방향 후보 중 실제 이동 거리와 음식으로부터의 거리가 큰 곳을 고릅니다.
@@ -1165,9 +1167,21 @@ local function updateFoodReaction(dt)
             if depthMovement >= 55 then
                 depthBonus = depthBonus + 70
             end
-            local score = foodDistance + movementDistance * 0.58 + depthBonus
+            local moveDirectionX = moveDeltaX / math.max(movementDistance, 1)
+            local moveDirectionY = moveDeltaY / math.max(movementDistance, 1)
+            local awayAlignment = moveDirectionX * awayX + moveDirectionY * awayY
+            local depthThreat = clamp(math.abs(deltaY) / 85, 0, 1)
+            local directionalBonus = math.max(0, awayAlignment) * 280 * depthThreat
+            local score = foodDistance + movementDistance * 0.58 + depthBonus + directionalBonus
 
-            if movementDistance > 28 and foodDistance > distance + 15 and score > bestScore then
+            local movesAwayInDepth = moveDeltaY * awayY > 0
+            local validDepthDirection = depthThreat < 0.38
+                or not canMoveAwayInDepth
+                or movesAwayInDepth
+            if movementDistance > 28
+                and foodDistance > distance + 15
+                and validDepthDirection
+                and score > bestScore then
                 bestScore = score
                 targetX = candidateX
                 targetY = candidateY
