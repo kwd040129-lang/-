@@ -2866,6 +2866,16 @@ function love.mousereleased(windowX, windowY, button)
             local sourceIndex = refrigeratorTransferDrag.sourceIndex
             sourceStorage.slots[sourceIndex], targetStorage.slots[targetIndex] =
                 targetStorage.slots[targetIndex], sourceStorage.slots[sourceIndex]
+        elseif refrigeratorTransferDrag.sourceStorage == "refrigerator"
+            and not isPointInsideRect(viewX, viewY, getRefrigeratorWindowRect()) then
+            local sourceIndex = refrigeratorTransferDrag.sourceIndex
+            local item = refrigeratorStorage.slots[sourceIndex]
+            if item then
+                local pointerX, pointerY = windowToWorld(windowX, windowY)
+                refrigeratorStorage.slots[sourceIndex] = nil
+                createDroppedFood(item, pointerX, pointerY)
+                ui.isRefrigeratorOpen = false
+            end
         end
         cancelRefrigeratorTransferDrag()
         return
