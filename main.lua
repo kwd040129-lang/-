@@ -1150,60 +1150,12 @@ local function updateFoodReaction(dt)
         targetY = item.groundY - approachY * 58
     else
         local safeDistance = math.max(distance, 1)
-        local awayX = -deltaX / safeDistance
-        local awayY = -deltaY / safeDistance
-        local baseAngle = math.atan2(awayY, awayX)
-        local minFootX = character.width * 0.5
-        local maxFootX = roomWorldWidth - character.width * 0.5
-        local minFootY = getMinCharacterFloorY() + character.height
-        local maxFootY = getWorldFloorY() + character.height
-        local bestScore = -math.huge
-        local canMoveAwayInDepth = (awayY < 0 and bounds.footY > minFootY + 30)
-            or (awayY > 0 and bounds.footY < maxFootY - 30)
-
-        -- 정반대 방향이 벽에 막혀도 앞/뒤 대각선으로 빠져나갈 수 있도록
-        -- 8방향 후보 중 실제 이동 거리와 음식으로부터의 거리가 큰 곳을 고릅니다.
-        for directionIndex = 0, 7 do
-            local angle = baseAngle + directionIndex * math.pi * 0.25
-            local candidateX = clamp(bounds.footX + math.cos(angle) * 230, minFootX, maxFootX)
-            local candidateY = clamp(bounds.footY + math.sin(angle) * 225, minFootY, maxFootY)
-            local moveDeltaX = candidateX - bounds.footX
-            local moveDeltaY = candidateY - bounds.footY
-            local movementDistance = math.sqrt(moveDeltaX * moveDeltaX + moveDeltaY * moveDeltaY)
-            local foodDeltaX = candidateX - item.x
-            local foodDeltaY = candidateY - item.groundY
-            local foodDistance = math.sqrt(foodDeltaX * foodDeltaX + foodDeltaY * foodDeltaY)
-            local depthMovement = math.abs(moveDeltaY)
-            local depthBonus = depthMovement * 0.85
-            if depthMovement >= 55 then
-                depthBonus = depthBonus + 70
-            end
-            local moveDirectionX = moveDeltaX / math.max(movementDistance, 1)
-            local moveDirectionY = moveDeltaY / math.max(movementDistance, 1)
-            local awayAlignment = moveDirectionX * awayX + moveDirectionY * awayY
-            local depthThreat = clamp(math.abs(deltaY) / 85, 0, 1)
-            local directionalBonus = math.max(0, awayAlignment) * 280 * depthThreat
-            local score = foodDistance + movementDistance * 0.58 + depthBonus + directionalBonus
-
-            local movesAwayInDepth = moveDeltaY * awayY > 0
-            local validDepthDirection = depthThreat < 0.38
-                or not canMoveAwayInDepth
-                or (movesAwayInDepth and depthMovement >= 60)
-            if movementDistance > 28
-                and foodDistance > distance + 15
-                and validDepthDirection
-                and score > bestScore then
-                bestScore = score
-                targetX = candidateX
-                targetY = candidateY
-            end
-        end
-
-        if not targetX then
-            targetX = bounds.footX
-            targetY = clamp(bounds.footY + (bounds.footY < roomWorldHeight * 0.72 and 150 or -150),
-                minFootY, maxFootY)
-        end
+        local approachX = deltaX / safeDistance
+        local approachY = deltaY / safeDistance
+        -- 좋아하는 음식은 +방향으로 따라가고, 싫어하는 음식은 같은 벡터의
+        -- 부호만 뒤집어 정확히 정반대 방향으로 이동합니다.
+        targetX = bounds.footX - approachX * 230
+        targetY = bounds.footY - approachY * 230
     end
 
     local targetChanged = not foodReaction.lastTargetX
