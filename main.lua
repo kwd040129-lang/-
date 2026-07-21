@@ -252,7 +252,9 @@ local foodReaction = {
     lastTargetY = nil,
     lastFoodX = nil,
     lastFoodY = nil,
-    boundaryEscape = false
+    boundaryEscape = false,
+    boundaryDirectionX = nil,
+    boundaryDirectionY = nil
 }
 
 local chat = {
@@ -1101,6 +1103,8 @@ local function stopFoodReaction()
     foodReaction.lastFoodX = nil
     foodReaction.lastFoodY = nil
     foodReaction.boundaryEscape = false
+    foodReaction.boundaryDirectionX = nil
+    foodReaction.boundaryDirectionY = nil
 end
 
 local function updateFoodReaction(dt)
@@ -1145,6 +1149,8 @@ local function updateFoodReaction(dt)
     foodReaction.timer = foodReaction.timer - dt
     local targetX, targetY
     local usedBoundaryEscape = false
+    local reactionDirectionX = deltaX / math.max(distance, 1)
+    local reactionDirectionY = deltaY / math.max(distance, 1)
     if reactionKind == "liked" then
         local safeDistance = math.max(distance, 1)
         local approachX = deltaX / safeDistance
@@ -1192,10 +1198,19 @@ local function updateFoodReaction(dt)
     end
 
     local reactionChanged = foodReaction.kind ~= reactionKind
+    local boundaryDirectionChanged = false
+    if foodReaction.boundaryEscape
+        and foodReaction.boundaryDirectionX
+        and foodReaction.boundaryDirectionY then
+        local directionDot = reactionDirectionX * foodReaction.boundaryDirectionX
+            + reactionDirectionY * foodReaction.boundaryDirectionY
+        boundaryDirectionChanged = directionDot < 0.72
+    end
     local shouldReplan
     if reactionKind == "disliked" then
         shouldReplan = reactionChanged
             or not character.isMovingToTarget
+            or boundaryDirectionChanged
             or (not foodReaction.boundaryEscape
                 and foodReaction.timer <= 0
                 and foodMovedDistance >= 42)
@@ -1211,6 +1226,13 @@ local function updateFoodReaction(dt)
         foodReaction.lastFoodX = item.x
         foodReaction.lastFoodY = item.groundY
         foodReaction.boundaryEscape = reactionKind == "disliked" and usedBoundaryEscape
+        if foodReaction.boundaryEscape then
+            foodReaction.boundaryDirectionX = reactionDirectionX
+            foodReaction.boundaryDirectionY = reactionDirectionY
+        else
+            foodReaction.boundaryDirectionX = nil
+            foodReaction.boundaryDirectionY = nil
+        end
     end
     foodReaction.active = true
     foodReaction.kind = reactionKind
