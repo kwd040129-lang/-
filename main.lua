@@ -900,7 +900,7 @@ local function createDroppedFood(item, worldX, worldY)
         y = math.min(worldY, groundY),
         groundY = groundY,
         size = size,
-        fallSpeed = 0,
+        fallSpeed = 180,
         isDragging = false
     }
     table.insert(droppedFoodItems, dropped)
@@ -931,13 +931,35 @@ local function updateDroppedFoodItems(dt)
                 item.groundY = clamp(math.max(item.groundY, item.y), getFloorTopY() + item.size * 0.5, roomWorldHeight - item.size * 0.5)
             end
         elseif item.y < item.groundY then
-            item.fallSpeed = math.min(item.fallSpeed + 720 * dt, 680)
+            item.fallSpeed = math.min(item.fallSpeed + 2600 * dt, 1500)
             item.y = math.min(item.groundY, item.y + item.fallSpeed * dt)
         else
             item.y = item.groundY
             item.fallSpeed = 0
         end
     end
+end
+
+
+local function storeDroppedFoodInBackpack(item)
+    local slotCount = backpackStorage.columns * backpackStorage.rows
+    for slotIndex = 1, slotCount do
+        if not backpackStorage.slots[slotIndex] then
+            backpackStorage.slots[slotIndex] = {
+                id = item.id,
+                image = item.image,
+                fileName = item.fileName
+            }
+            for index = #droppedFoodItems, 1, -1 do
+                if droppedFoodItems[index] == item then
+                    table.remove(droppedFoodItems, index)
+                    break
+                end
+            end
+            return true
+        end
+    end
+    return false
 end
 
 local function openBackpackWindow()
@@ -2784,8 +2806,16 @@ function love.mousereleased(windowX, windowY, button)
     end
 
     if button == 1 and worldFoodDrag.item then
-        worldFoodDrag.item.isDragging = false
-        worldFoodDrag.item.fallSpeed = 0
+        local item = worldFoodDrag.item
+        local viewX, viewY = windowToVirtual(windowX, windowY)
+        local stored = false
+        if isPointInsideRect(viewX, viewY, getBackpackButtonRect()) then
+            stored = storeDroppedFoodInBackpack(item)
+        end
+        if not stored then
+            item.isDragging = false
+            item.fallSpeed = 180
+        end
         worldFoodDrag.item = nil
     end
 end
@@ -3421,7 +3451,15 @@ end
 
 local function drawBackpackButton()
     local rect = getBackpackButtonRect()
-    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8, {0.97, 0.86, 0.70, 0.96}, {0.42, 0.25, 0.13, 0.52})
+    local isDropTarget = false
+    if worldFoodDrag.item then
+        local mouseX, mouseY = love.mouse.getPosition()
+        local viewX, viewY = windowToVirtual(mouseX, mouseY)
+        isDropTarget = isPointInsideRect(viewX, viewY, rect)
+    end
+    local fillColor = isDropTarget and {1.0, 0.72, 0.31, 1.0} or {0.97, 0.86, 0.70, 0.96}
+    local lineColor = isDropTarget and {0.70, 0.31, 0.08, 0.92} or {0.42, 0.25, 0.13, 0.52}
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8, fillColor, lineColor)
 
     love.graphics.setColor(0.45, 0.25, 0.12, 1)
     love.graphics.setLineWidth(2.2)
