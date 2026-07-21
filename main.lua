@@ -211,7 +211,17 @@ local droppedFoodItems = {}
 local worldFoodDrag = {
     item = nil,
     offsetX = 0,
-    offsetY = 0
+    offsetY = 0,
+    mode = nil,
+    holdTimer = 0,
+    holdDelay = 0.30,
+    moveThreshold = 10,
+    startViewX = 0,
+    startViewY = 0,
+    pointerViewX = 0,
+    pointerViewY = 0,
+    pointerWorldX = 0,
+    pointerWorldY = 0
 }
 
 local refrigeratorTransferDrag = {
@@ -1011,13 +1021,35 @@ end
 local function updateDroppedFoodItems(dt)
     for _, item in ipairs(droppedFoodItems) do
         if item.isDragging then
-            local windowX, windowY = love.mouse.getPosition()
-            local viewX, viewY = windowToVirtual(windowX, windowY)
-            if isInsideViewport(viewX, viewY) then
-                local pointerX, pointerY = windowToWorld(windowX, windowY)
-                item.x = clamp(pointerX - worldFoodDrag.offsetX, item.size * 0.5, roomWorldWidth - item.size * 0.5)
-                item.y = clamp(pointerY - worldFoodDrag.offsetY, item.size * 0.5, roomWorldHeight - item.size * 0.5)
-                item.groundY = clamp(math.max(item.groundY, item.y), getFloorTopY() + item.size * 0.5, roomWorldHeight - item.size * 0.5)
+            worldFoodDrag.holdTimer = worldFoodDrag.holdTimer + dt
+            local moveX = worldFoodDrag.pointerViewX - worldFoodDrag.startViewX
+            local moveY = worldFoodDrag.pointerViewY - worldFoodDrag.startViewY
+            local movedDistance = math.sqrt(moveX * moveX + moveY * moveY)
+
+            if worldFoodDrag.mode == "pending" then
+                if movedDistance >= worldFoodDrag.moveThreshold then
+                    worldFoodDrag.mode = "ground"
+                elseif worldFoodDrag.holdTimer >= worldFoodDrag.holdDelay then
+                    worldFoodDrag.mode = "lift"
+                end
+            end
+
+            if isInsideViewport(worldFoodDrag.pointerViewX, worldFoodDrag.pointerViewY) then
+                local pointerX = worldFoodDrag.pointerWorldX
+                local pointerY = worldFoodDrag.pointerWorldY
+                item.x = clamp(pointerX - worldFoodDrag.offsetX,
+                    item.size * 0.5, roomWorldWidth - item.size * 0.5)
+
+                if worldFoodDrag.mode == "ground" then
+                    local groundY = clamp(pointerY - worldFoodDrag.offsetY,
+                        getFloorTopY() + item.size * 0.5, roomWorldHeight - item.size * 0.5)
+                    item.groundY = groundY
+                    item.y = groundY
+                    item.fallSpeed = 0
+                elseif worldFoodDrag.mode == "lift" then
+                    item.y = clamp(pointerY - worldFoodDrag.offsetY,
+                        item.size * 0.5, item.groundY)
+                end
             end
         elseif item.y < item.groundY then
             item.fallSpeed = math.min(item.fallSpeed + 2600 * dt, 1500)
@@ -2858,6 +2890,14 @@ function love.mousepressed(windowX, windowY, button)
             worldFoodDrag.item = clickedFood
             worldFoodDrag.offsetX = pointerX - clickedFood.x
             worldFoodDrag.offsetY = pointerY - clickedFood.y
+            worldFoodDrag.mode = "pending"
+            worldFoodDrag.holdTimer = 0
+            worldFoodDrag.startViewX = viewX
+            worldFoodDrag.startViewY = viewY
+            worldFoodDrag.pointerViewX = viewX
+            worldFoodDrag.pointerViewY = viewY
+            worldFoodDrag.pointerWorldX = pointerX
+            worldFoodDrag.pointerWorldY = pointerY
             clickedFood.isDragging = true
             clickedFood.fallSpeed = 0
             character.isMovingToTarget = false
@@ -3016,9 +3056,11 @@ function love.mousereleased(windowX, windowY, button)
         end
         if not stored then
             item.isDragging = false
-            item.fallSpeed = 180
+            item.fallSpeed = worldFoodDrag.mode == "lift" and 180 or 0
         end
         worldFoodDrag.item = nil
+        worldFoodDrag.mode = nil
+        worldFoodDrag.holdTimer = 0
     end
 end
 
@@ -3035,6 +3077,12 @@ function love.mousemoved(windowX, windowY, dx, dy)
 
     if backpackDrag.active then
         backpackDrag.x, backpackDrag.y = windowToVirtual(windowX, windowY)
+        return
+    end
+
+    if worldFoodDrag.item then
+        worldFoodDrag.pointerViewX, worldFoodDrag.pointerViewY = windowToVirtual(windowX, windowY)
+        worldFoodDrag.pointerWorldX, worldFoodDrag.pointerWorldY = windowToWorld(windowX, windowY)
         return
     end
 
