@@ -249,7 +249,9 @@ local foodReaction = {
     kind = nil,
     timer = 0,
     lastTargetX = nil,
-    lastTargetY = nil
+    lastTargetY = nil,
+    lastFoodX = nil,
+    lastFoodY = nil
 }
 
 local chat = {
@@ -1095,6 +1097,8 @@ local function stopFoodReaction()
     foodReaction.timer = 0
     foodReaction.lastTargetX = nil
     foodReaction.lastTargetY = nil
+    foodReaction.lastFoodX = nil
+    foodReaction.lastFoodY = nil
 end
 
 local function updateFoodReaction(dt)
@@ -1115,7 +1119,13 @@ local function updateFoodReaction(dt)
     local deltaX = item.x - bounds.footX
     local deltaY = item.groundY - bounds.footY
     local distance = math.sqrt(deltaX * deltaX + deltaY * deltaY)
-    local activationDistance = reactionKind == "liked" and 235 or 195
+    local isContinuingReaction = foodReaction.active and foodReaction.kind == reactionKind
+    local activationDistance
+    if reactionKind == "liked" then
+        activationDistance = isContinuingReaction and 265 or 235
+    else
+        activationDistance = isContinuingReaction and 245 or 195
+    end
 
     if distance > activationDistance then
         stopFoodReaction()
@@ -1199,11 +1209,30 @@ local function updateFoodReaction(dt)
     local targetChanged = not foodReaction.lastTargetX
         or math.abs(targetX - foodReaction.lastTargetX) > 24
         or math.abs(targetY - foodReaction.lastTargetY) > 24
-    if foodReaction.timer <= 0 or targetChanged or foodReaction.kind ~= reactionKind then
+    local foodMovedDistance = math.huge
+    if foodReaction.lastFoodX and foodReaction.lastFoodY then
+        local foodMoveX = item.x - foodReaction.lastFoodX
+        local foodMoveY = item.groundY - foodReaction.lastFoodY
+        foodMovedDistance = math.sqrt(foodMoveX * foodMoveX + foodMoveY * foodMoveY)
+    end
+
+    local reactionChanged = foodReaction.kind ~= reactionKind
+    local shouldReplan
+    if reactionKind == "disliked" then
+        shouldReplan = reactionChanged
+            or not character.isMovingToTarget
+            or (foodReaction.timer <= 0 and foodMovedDistance >= 42)
+    else
+        shouldReplan = reactionChanged or foodReaction.timer <= 0 or targetChanged
+    end
+
+    if shouldReplan then
         setMoveTarget(targetX, targetY)
-        foodReaction.timer = reactionKind == "disliked" and 0.28 or 0.18
+        foodReaction.timer = reactionKind == "disliked" and 0.62 or 0.18
         foodReaction.lastTargetX = targetX
         foodReaction.lastTargetY = targetY
+        foodReaction.lastFoodX = item.x
+        foodReaction.lastFoodY = item.groundY
     end
     foodReaction.active = true
     foodReaction.kind = reactionKind
