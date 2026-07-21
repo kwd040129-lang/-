@@ -199,6 +199,14 @@ local backpackStorage = {
     }
 }
 
+local backpackDrag = {
+    active = false,
+    sourceIndex = nil,
+    item = nil,
+    x = 0,
+    y = 0
+}
+
 local chat = {
     input = "",
     composition = "",
@@ -832,6 +840,48 @@ local function getBackpackCloseRect()
     }
 end
 
+local function getBackpackGridLayout()
+    local rect = getBackpackWindowRect()
+    local gap = 8
+    local horizontalPadding = 24
+    local topY = rect.y + 66
+    local availableWidth = rect.width - horizontalPadding * 2
+    local availableHeight = rect.height - 88
+    local cellSize = math.floor(math.min(
+        (availableWidth - gap * (backpackStorage.columns - 1)) / backpackStorage.columns,
+        (availableHeight - gap * (backpackStorage.rows - 1)) / backpackStorage.rows
+    ))
+    local gridWidth = cellSize * backpackStorage.columns + gap * (backpackStorage.columns - 1)
+    local gridHeight = cellSize * backpackStorage.rows + gap * (backpackStorage.rows - 1)
+    return {
+        x = rect.x + (rect.width - gridWidth) * 0.5,
+        y = topY + math.max(0, (availableHeight - gridHeight) * 0.5),
+        cellSize = cellSize,
+        gap = gap
+    }
+end
+
+local function getBackpackSlotAt(x, y)
+    local layout = getBackpackGridLayout()
+    for row = 1, backpackStorage.rows do
+        for column = 1, backpackStorage.columns do
+            local slotX = layout.x + (column - 1) * (layout.cellSize + layout.gap)
+            local slotY = layout.y + (row - 1) * (layout.cellSize + layout.gap)
+            if x >= slotX and x <= slotX + layout.cellSize
+                and y >= slotY and y <= slotY + layout.cellSize then
+                return (row - 1) * backpackStorage.columns + column
+            end
+        end
+    end
+    return nil
+end
+
+local function cancelBackpackDrag()
+    backpackDrag.active = false
+    backpackDrag.sourceIndex = nil
+    backpackDrag.item = nil
+end
+
 local function openBackpackWindow()
     ui.isBackpackOpen = true
     ui.isRefrigeratorOpen = false
@@ -845,6 +895,7 @@ local function openBackpackWindow()
 end
 
 local function closeBackpackWindow()
+    cancelBackpackDrag()
     ui.isBackpackOpen = false
 end
 
@@ -2232,6 +2283,16 @@ local function handleUiMousePressed(virtualX, virtualY)
     if ui.isBackpackOpen then
         if isPointInsideRect(virtualX, virtualY, getBackpackCloseRect()) then
             closeBackpackWindow()
+        else
+            local slotIndex = getBackpackSlotAt(virtualX, virtualY)
+            local item = slotIndex and backpackStorage.slots[slotIndex] or nil
+            if item then
+                backpackDrag.active = true
+                backpackDrag.sourceIndex = slotIndex
+                backpackDrag.item = item
+                backpackDrag.x = virtualX
+                backpackDrag.y = virtualY
+            end
         end
         return true
     end
@@ -2619,6 +2680,18 @@ end
 
 -- 마우스 버튼에서 손을 뗐을 때 실행됩니다.
 function love.mousereleased(windowX, windowY, button)
+    if button == 1 and backpackDrag.active then
+        local viewX, viewY = windowToVirtual(windowX, windowY)
+        local targetIndex = getBackpackSlotAt(viewX, viewY)
+        if targetIndex and backpackDrag.sourceIndex then
+            local sourceIndex = backpackDrag.sourceIndex
+            backpackStorage.slots[sourceIndex], backpackStorage.slots[targetIndex] =
+                backpackStorage.slots[targetIndex], backpackStorage.slots[sourceIndex]
+        end
+        cancelBackpackDrag()
+        return
+    end
+
     if button == 1 and ui.isBackgroundListDragging then
         ui.isBackgroundListDragging = false
         return
@@ -2638,6 +2711,11 @@ function love.touchpressed(id, windowX, windowY, dx, dy, pressure)
 end
 
 function love.mousemoved(windowX, windowY, dx, dy)
+    if backpackDrag.active then
+        backpackDrag.x, backpackDrag.y = windowToVirtual(windowX, windowY)
+        return
+    end
+
     if ui.isInteriorOpen and ui.isBackgroundListDragging then
         local viewX = windowToVirtual(windowX, windowY)
         local dragDelta = viewX - ui.backgroundDragLastX
@@ -3766,19 +3844,9 @@ local function drawBackpackWindow()
 
     local rect = getBackpackWindowRect()
     local closeRect = getBackpackCloseRect()
-    local gap = 8
-    local horizontalPadding = 24
-    local topY = rect.y + 66
-    local availableWidth = rect.width - horizontalPadding * 2
-    local availableHeight = rect.height - 88
-    local cellSize = math.floor(math.min(
-        (availableWidth - gap * (backpackStorage.columns - 1)) / backpackStorage.columns,
-        (availableHeight - gap * (backpackStorage.rows - 1)) / backpackStorage.rows
-    ))
-    local gridWidth = cellSize * backpackStorage.columns + gap * (backpackStorage.columns - 1)
-    local gridHeight = cellSize * backpackStorage.rows + gap * (backpackStorage.rows - 1)
-    local gridX = rect.x + (rect.width - gridWidth) * 0.5
-    local gridY = topY + math.max(0, (availableHeight - gridHeight) * 0.5)
+    local layout = getBackpackGridLayout()
+    local cellSize = layout.cellSize
+    local hoveredSlot = backpackDrag.active and getBackpackSlotAt(backpackDrag.x, backpackDrag.y) or nil
 
     love.graphics.setColor(0, 0, 0, 0.48)
     love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
@@ -3796,18 +3864,31 @@ local function drawBackpackWindow()
     for row = 1, backpackStorage.rows do
         for column = 1, backpackStorage.columns do
             local slotIndex = (row - 1) * backpackStorage.columns + column
-            local slotX = gridX + (column - 1) * (cellSize + gap)
-            local slotY = gridY + (row - 1) * (cellSize + gap)
-            drawRoundedPanel(slotX, slotY, cellSize, cellSize, 6, {0.77, 0.66, 0.49, 0.92}, {0.40, 0.26, 0.14, 0.62})
+            local slotX = layout.x + (column - 1) * (cellSize + layout.gap)
+            local slotY = layout.y + (row - 1) * (cellSize + layout.gap)
+            local fillColor = hoveredSlot == slotIndex and {0.91, 0.78, 0.50, 0.98} or {0.77, 0.66, 0.49, 0.92}
+            drawRoundedPanel(slotX, slotY, cellSize, cellSize, 6, fillColor, {0.40, 0.26, 0.14, 0.62})
             love.graphics.setColor(1, 0.96, 0.86, 0.42)
             love.graphics.rectangle("line", slotX + 3, slotY + 3, cellSize - 6, cellSize - 6, 4, 4)
 
             local item = backpackStorage.slots[slotIndex]
-            if item and item.image then
+            if item and item.image and not (backpackDrag.active and backpackDrag.sourceIndex == slotIndex) then
                 local padding = math.max(3, math.floor(cellSize * 0.08))
                 drawImageContained(item.image, slotX + padding, slotY + padding, cellSize - padding * 2, cellSize - padding * 2)
             end
         end
+    end
+
+    if backpackDrag.active and backpackDrag.item and backpackDrag.item.image then
+        local dragSize = cellSize * 0.92
+        love.graphics.setColor(1, 1, 1, 0.94)
+        drawImageContained(
+            backpackDrag.item.image,
+            backpackDrag.x - dragSize * 0.5,
+            backpackDrag.y - dragSize * 0.5,
+            dragSize,
+            dragSize
+        )
     end
 end
 
