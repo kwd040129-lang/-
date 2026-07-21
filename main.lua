@@ -214,6 +214,15 @@ local worldFoodDrag = {
     offsetY = 0
 }
 
+local refrigeratorTransferDrag = {
+    active = false,
+    sourceStorage = nil,
+    sourceIndex = nil,
+    item = nil,
+    x = 0,
+    y = 0
+}
+
 local chat = {
     input = "",
     composition = "",
@@ -791,7 +800,7 @@ local function getRefrigeratorOpenButtonRect(item)
 end
 
 local function getRefrigeratorWindowRect()
-    local width = math.min(390, virtualWidth - 28)
+    local width = math.min(740, virtualWidth - 28)
     local height = math.min(330, virtualHeight - 36)
     return {
         x = (virtualWidth - width) * 0.5,
@@ -799,6 +808,66 @@ local function getRefrigeratorWindowRect()
         width = width,
         height = height
     }
+end
+
+
+local function getRefrigeratorDualLayouts()
+    local rect = getRefrigeratorWindowRect()
+    local outerPadding = 20
+    local centerGap = 18
+    local panelWidth = (rect.width - outerPadding * 2 - centerGap) * 0.5
+    local gap = 6
+    local cellSize = math.floor(math.min(
+        (panelWidth - 20 - gap * 4) / 5,
+        (rect.height - 100 - gap * 3) / 4
+    ))
+    local gridWidth = cellSize * 5 + gap * 4
+    local gridHeight = cellSize * 4 + gap * 3
+    local gridY = rect.y + 72 + math.max(0, (rect.height - 88 - gridHeight) * 0.5)
+    local leftPanelX = rect.x + outerPadding
+    local rightPanelX = leftPanelX + panelWidth + centerGap
+    return {
+        refrigerator = {
+            x = leftPanelX + (panelWidth - gridWidth) * 0.5,
+            y = gridY,
+            cellSize = cellSize,
+            gap = gap,
+            panelX = leftPanelX,
+            panelWidth = panelWidth
+        },
+        backpack = {
+            x = rightPanelX + (panelWidth - gridWidth) * 0.5,
+            y = gridY,
+            cellSize = cellSize,
+            gap = gap,
+            panelX = rightPanelX,
+            panelWidth = panelWidth
+        }
+    }
+end
+
+local function getTransferSlotAt(x, y)
+    local layouts = getRefrigeratorDualLayouts()
+    for storageName, layout in pairs(layouts) do
+        for row = 1, 4 do
+            for column = 1, 5 do
+                local slotX = layout.x + (column - 1) * (layout.cellSize + layout.gap)
+                local slotY = layout.y + (row - 1) * (layout.cellSize + layout.gap)
+                if x >= slotX and x <= slotX + layout.cellSize
+                    and y >= slotY and y <= slotY + layout.cellSize then
+                    return storageName, (row - 1) * 5 + column
+                end
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function cancelRefrigeratorTransferDrag()
+    refrigeratorTransferDrag.active = false
+    refrigeratorTransferDrag.sourceStorage = nil
+    refrigeratorTransferDrag.sourceIndex = nil
+    refrigeratorTransferDrag.item = nil
 end
 
 local function getRefrigeratorCloseRect()
@@ -813,6 +882,7 @@ end
 
 local function openRefrigeratorWindow()
     ui.isRefrigeratorOpen = true
+    ui.isBackpackOpen = false
     ui.isMenuOpen = false
     character.isMovingToTarget = false
     character.movePath = nil
@@ -823,6 +893,7 @@ local function openRefrigeratorWindow()
 end
 
 local function closeRefrigeratorWindow()
+    cancelRefrigeratorTransferDrag()
     ui.isRefrigeratorOpen = false
 end
 
@@ -2380,6 +2451,18 @@ local function handleUiMousePressed(virtualX, virtualY)
     if ui.isRefrigeratorOpen then
         if isPointInsideRect(virtualX, virtualY, getRefrigeratorCloseRect()) then
             closeRefrigeratorWindow()
+        else
+            local storageName, slotIndex = getTransferSlotAt(virtualX, virtualY)
+            local storage = storageName == "refrigerator" and refrigeratorStorage or backpackStorage
+            local item = storageName and storage.slots[slotIndex] or nil
+            if item then
+                refrigeratorTransferDrag.active = true
+                refrigeratorTransferDrag.sourceStorage = storageName
+                refrigeratorTransferDrag.sourceIndex = slotIndex
+                refrigeratorTransferDrag.item = item
+                refrigeratorTransferDrag.x = virtualX
+                refrigeratorTransferDrag.y = virtualY
+            end
         end
         return true
     end
@@ -2772,6 +2855,22 @@ end
 
 -- 마우스 버튼에서 손을 뗐을 때 실행됩니다.
 function love.mousereleased(windowX, windowY, button)
+    if button == 1 and refrigeratorTransferDrag.active then
+        local viewX, viewY = windowToVirtual(windowX, windowY)
+        local targetStorageName, targetIndex = getTransferSlotAt(viewX, viewY)
+        if targetStorageName and targetIndex then
+            local sourceStorage = refrigeratorTransferDrag.sourceStorage == "refrigerator"
+                and refrigeratorStorage or backpackStorage
+            local targetStorage = targetStorageName == "refrigerator"
+                and refrigeratorStorage or backpackStorage
+            local sourceIndex = refrigeratorTransferDrag.sourceIndex
+            sourceStorage.slots[sourceIndex], targetStorage.slots[targetIndex] =
+                targetStorage.slots[targetIndex], sourceStorage.slots[sourceIndex]
+        end
+        cancelRefrigeratorTransferDrag()
+        return
+    end
+
     if button == 1 and backpackDrag.active then
         local viewX, viewY = windowToVirtual(windowX, windowY)
         local targetIndex = getBackpackSlotAt(viewX, viewY)
@@ -2826,6 +2925,11 @@ function love.touchpressed(id, windowX, windowY, dx, dy, pressure)
 end
 
 function love.mousemoved(windowX, windowY, dx, dy)
+    if refrigeratorTransferDrag.active then
+        refrigeratorTransferDrag.x, refrigeratorTransferDrag.y = windowToVirtual(windowX, windowY)
+        return
+    end
+
     if backpackDrag.active then
         backpackDrag.x, backpackDrag.y = windowToVirtual(windowX, windowY)
         return
@@ -3961,41 +4065,60 @@ local function drawRefrigeratorWindow()
 
     local rect = getRefrigeratorWindowRect()
     local closeRect = getRefrigeratorCloseRect()
-    local gap = 8
-    local horizontalPadding = 24
-    local topY = rect.y + 66
-    local availableWidth = rect.width - horizontalPadding * 2
-    local availableHeight = rect.height - 88
-    local cellSize = math.floor(math.min(
-        (availableWidth - gap * (refrigeratorStorage.columns - 1)) / refrigeratorStorage.columns,
-        (availableHeight - gap * (refrigeratorStorage.rows - 1)) / refrigeratorStorage.rows
-    ))
-    local gridWidth = cellSize * refrigeratorStorage.columns + gap * (refrigeratorStorage.columns - 1)
-    local gridHeight = cellSize * refrigeratorStorage.rows + gap * (refrigeratorStorage.rows - 1)
-    local gridX = rect.x + (rect.width - gridWidth) * 0.5
-    local gridY = topY + math.max(0, (availableHeight - gridHeight) * 0.5)
+    local layouts = getRefrigeratorDualLayouts()
+    local hoveredStorage, hoveredIndex = nil, nil
+    if refrigeratorTransferDrag.active then
+        hoveredStorage, hoveredIndex = getTransferSlotAt(refrigeratorTransferDrag.x, refrigeratorTransferDrag.y)
+    end
 
     love.graphics.setColor(0, 0, 0, 0.48)
     love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
     drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 12, {0.94, 0.97, 0.98, 0.99}, {0.25, 0.42, 0.48, 0.60})
 
     love.graphics.setColor(0.16, 0.28, 0.33, 1)
-    love.graphics.print("냉장고 보관함", rect.x + 22, rect.y + 20)
-    love.graphics.setColor(0.34, 0.48, 0.53, 0.82)
-    love.graphics.printf("20칸", rect.x + 22, rect.y + 39, rect.width - 86, "left")
+    love.graphics.printf("냉장고", layouts.refrigerator.panelX, rect.y + 22, layouts.refrigerator.panelWidth, "center")
+    love.graphics.printf("내 가방", layouts.backpack.panelX, rect.y + 22, layouts.backpack.panelWidth, "center")
 
     drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7, {0.84, 0.91, 0.94, 0.96}, {0.25, 0.42, 0.48, 0.42})
     love.graphics.setColor(0.18, 0.30, 0.35, 1)
     love.graphics.printf("X", closeRect.x, closeRect.y + 6, closeRect.width, "center")
 
-    for row = 1, refrigeratorStorage.rows do
-        for column = 1, refrigeratorStorage.columns do
-            local slotX = gridX + (column - 1) * (cellSize + gap)
-            local slotY = gridY + (row - 1) * (cellSize + gap)
-            drawRoundedPanel(slotX, slotY, cellSize, cellSize, 6, {0.78, 0.87, 0.90, 0.96}, {0.28, 0.43, 0.49, 0.58})
-            love.graphics.setColor(1, 1, 1, 0.42)
-            love.graphics.rectangle("line", slotX + 3, slotY + 3, cellSize - 6, cellSize - 6, 4, 4)
+    love.graphics.setColor(0.32, 0.46, 0.50, 0.32)
+    love.graphics.rectangle("fill", rect.x + rect.width * 0.5 - 1, rect.y + 58, 2, rect.height - 76)
+
+    for storageName, layout in pairs(layouts) do
+        local storage = storageName == "refrigerator" and refrigeratorStorage or backpackStorage
+        for row = 1, 4 do
+            for column = 1, 5 do
+                local slotIndex = (row - 1) * 5 + column
+                local slotX = layout.x + (column - 1) * (layout.cellSize + layout.gap)
+                local slotY = layout.y + (row - 1) * (layout.cellSize + layout.gap)
+                local isHovered = hoveredStorage == storageName and hoveredIndex == slotIndex
+                local fill = isHovered and {0.70, 0.88, 0.91, 1} or {0.78, 0.87, 0.90, 0.96}
+                drawRoundedPanel(slotX, slotY, layout.cellSize, layout.cellSize, 6, fill, {0.28, 0.43, 0.49, 0.58})
+                love.graphics.setColor(1, 1, 1, 0.42)
+                love.graphics.rectangle("line", slotX + 3, slotY + 3, layout.cellSize - 6, layout.cellSize - 6, 4, 4)
+
+                local item = storage.slots[slotIndex]
+                local isSource = refrigeratorTransferDrag.active
+                    and refrigeratorTransferDrag.sourceStorage == storageName
+                    and refrigeratorTransferDrag.sourceIndex == slotIndex
+                if item and item.image and not isSource then
+                    local padding = math.max(3, math.floor(layout.cellSize * 0.08))
+                    drawImageContained(item.image, slotX + padding, slotY + padding,
+                        layout.cellSize - padding * 2, layout.cellSize - padding * 2)
+                end
+            end
         end
+    end
+
+    if refrigeratorTransferDrag.active and refrigeratorTransferDrag.item
+        and refrigeratorTransferDrag.item.image then
+        local dragSize = layouts.refrigerator.cellSize * 0.92
+        drawImageContained(refrigeratorTransferDrag.item.image,
+            refrigeratorTransferDrag.x - dragSize * 0.5,
+            refrigeratorTransferDrag.y - dragSize * 0.5,
+            dragSize, dragSize)
     end
 end
 
