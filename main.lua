@@ -90,6 +90,7 @@ local sprite = {
     currentFrame = 1,
     currentAnimation = "left",
     isMovingByKeyboard = false,
+    movementAxis = nil,
     animations = {
         left = {
             label = "left",
@@ -248,8 +249,7 @@ local foodReaction = {
     kind = nil,
     timer = 0,
     lastTargetX = nil,
-    lastTargetY = nil,
-    escapeMoveY = 0
+    lastTargetY = nil
 }
 
 local chat = {
@@ -1095,7 +1095,6 @@ local function stopFoodReaction()
     foodReaction.timer = 0
     foodReaction.lastTargetX = nil
     foodReaction.lastTargetY = nil
-    foodReaction.escapeMoveY = 0
 end
 
 local function updateFoodReaction(dt)
@@ -1206,7 +1205,6 @@ local function updateFoodReaction(dt)
         foodReaction.lastTargetX = targetX
         foodReaction.lastTargetY = targetY
     end
-    foodReaction.escapeMoveY = reactionKind == "disliked" and (targetY - bounds.footY) or 0
     foodReaction.active = true
     foodReaction.kind = reactionKind
 end
@@ -1874,7 +1872,20 @@ end
 -- 이동 벡터에서 더 크게 움직이는 축을 기준으로 걷기 애니메이션을 고릅니다.
 -- 옆으로 찍은 이동에 y값이 조금 섞여도 좌/우 걷기가 우선 나오도록 합니다.
 setAnimationFromMoveVector = function(moveX, moveY)
-    if math.abs(moveX) >= math.abs(moveY) then
+    local absX = math.abs(moveX)
+    local absY = math.abs(moveY)
+    local axis = sprite.movementAxis
+
+    if not axis then
+        axis = absX >= absY and "horizontal" or "vertical"
+    elseif axis == "horizontal" and absY > absX * 1.28 then
+        axis = "vertical"
+    elseif axis == "vertical" and absX > absY * 1.28 then
+        axis = "horizontal"
+    end
+    sprite.movementAxis = axis
+
+    if axis == "horizontal" then
         if moveX > 0 then
             setCurrentAnimation("right")
         elseif moveX < 0 then
@@ -3340,6 +3351,7 @@ function love.update(dt)
 
     -- 마우스로 캐릭터를 들어올리는 동안에는 드래그 전용 스프라이트를 가장 먼저 표시합니다.
     if character.isDragging then
+        sprite.movementAxis = nil
         setCurrentAnimation("drag")
     elseif sprite.isMovingByKeyboard then
         local animationMoveX = moveX
@@ -3350,22 +3362,10 @@ function love.update(dt)
             animationMoveY = targetMoveY
         end
 
-        local useFoodEscapeDepthAnimation = moveX == 0 and moveY == 0
-            and foodReaction.active
-            and foodReaction.kind == "disliked"
-            and math.abs(foodReaction.escapeMoveY) >= 35
-
-        if useFoodEscapeDepthAnimation then
-            if foodReaction.escapeMoveY < 0 then
-                setCurrentAnimation("back")
-            else
-                setCurrentAnimation("front")
-            end
-        else
-            setAnimationFromMoveVector(animationMoveX, animationMoveY)
-        end
+        setAnimationFromMoveVector(animationMoveX, animationMoveY)
     else
         -- 이동을 멈추면 어느 방향에서 멈췄든 기본 대기 자세는 전면으로 고정합니다.
+        sprite.movementAxis = nil
         setCurrentAnimation("front")
     end
 
