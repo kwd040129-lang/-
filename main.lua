@@ -167,6 +167,8 @@ local ui = {
     isBackpackOpen = false,
     isStatusOpen = false,
     isCookingOpen = false,
+    isViewingWindow = false,
+    viewingWindowItem = nil,
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
     isBackgroundListDragging = false,
@@ -870,6 +872,72 @@ local function getRefrigeratorOpenButtonRect(item)
         width = width,
         height = height
     }
+end
+
+function ui.getViewableWindow()
+    if character.isDragging
+        or character.isMovingToTarget
+        or sprite.isMovingByKeyboard
+        or stairAction.active then
+        return nil
+    end
+
+    local characterBounds = getCharacterVisualBounds()
+    local characterEyeY = characterBounds.y + characterBounds.height * 0.27
+
+    for _, item in ipairs(placedFurniture) do
+        if item.id == "window" then
+            local bounds = getFurnitureVisualBounds(item)
+            local paneLeft = bounds.x + bounds.width * 0.22
+            local paneRight = bounds.x + bounds.width * 0.78
+            local paneTop = bounds.y + bounds.height * 0.22
+            local paneBottom = bounds.y + bounds.height * 0.86
+            local isHorizontallyInFront = characterBounds.footX >= paneLeft
+                and characterBounds.footX <= paneRight
+            local isHeightAligned = characterEyeY >= paneTop + 4
+                and characterEyeY <= paneBottom - 4
+
+            if isHorizontallyInFront and isHeightAligned then
+                return item
+            end
+        end
+    end
+
+    return nil
+end
+
+function ui.getWindowViewButtonRect(item)
+    local bounds = getFurnitureVisualBounds(item)
+    local centerX = (bounds.footX - camera.x) * camera.zoom + virtualWidth * 0.5
+    local topY = (bounds.y - camera.y) * camera.zoom + virtualHeight * 0.5
+    local width = 132
+    local height = 34
+
+    return {
+        x = clamp(centerX - width * 0.5, 10, virtualWidth - width - 10),
+        y = clamp(topY - height - 10, 10, virtualHeight - height - 10),
+        width = width,
+        height = height
+    }
+end
+
+function ui.startWindowViewing(item)
+    ui.isViewingWindow = true
+    ui.viewingWindowItem = item
+    character.isMovingToTarget = false
+    character.movePath = nil
+    character.isDragging = false
+    sprite.isMovingByKeyboard = false
+    sprite.movementAxis = nil
+    setCurrentAnimation("back")
+    sprite.currentFrame = 1
+end
+
+function ui.stopWindowViewing()
+    ui.isViewingWindow = false
+    ui.viewingWindowItem = nil
+    sprite.isMovingByKeyboard = false
+    setCurrentAnimation("front")
 end
 
 local function getRefrigeratorWindowRect()
@@ -2990,6 +3058,16 @@ local function handleUiMousePressed(virtualX, virtualY)
     end
 
     if not ui.isInteriorOpen and not ui.isChatOpen then
+        local viewableWindow = ui.getViewableWindow()
+        if viewableWindow and isPointInsideRect(virtualX, virtualY, ui.getWindowViewButtonRect(viewableWindow)) then
+            if ui.isViewingWindow then
+                ui.stopWindowViewing()
+            else
+                ui.startWindowViewing(viewableWindow)
+            end
+            return true
+        end
+
         local refrigerator = getNearbyRefrigerator()
         if refrigerator and isPointInsideRect(virtualX, virtualY, getRefrigeratorOpenButtonRect(refrigerator)) then
             openRefrigeratorWindow()
@@ -3545,6 +3623,22 @@ function love.update(dt)
 
     if ui.isCookingOpen then
         return
+    end
+
+    if ui.isViewingWindow then
+        local viewableWindow = ui.getViewableWindow()
+        if viewableWindow ~= ui.viewingWindowItem then
+            ui.stopWindowViewing()
+        else
+            character.isMovingToTarget = false
+            character.movePath = nil
+            sprite.isMovingByKeyboard = false
+            sprite.movementAxis = nil
+            setCurrentAnimation("back")
+            sprite.currentFrame = 1
+            updateCamera(dt, false)
+            return
+        end
     end
 
     if updateStairAction(dt) then
@@ -4626,6 +4720,29 @@ local function drawRefrigeratorOpenPrompt()
     love.graphics.printf("냉장고 열기", rect.x, rect.y + 8, rect.width, "center")
 end
 
+function ui.drawWindowViewPrompt()
+    if ui.isInteriorOpen
+        or ui.isChatOpen
+        or ui.isRefrigeratorOpen
+        or ui.isBackpackOpen
+        or ui.isStatusOpen
+        or ui.isCookingOpen then
+        return
+    end
+
+    local windowItem = ui.getViewableWindow()
+    if not windowItem then
+        return
+    end
+
+    local rect = ui.getWindowViewButtonRect(windowItem)
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8,
+        {0.91, 0.96, 0.98, 0.97}, {0.28, 0.48, 0.56, 0.52})
+    love.graphics.setColor(0.18, 0.31, 0.36, 1)
+    local label = ui.isViewingWindow and "구경 그만하기" or "창밖 구경하기"
+    love.graphics.printf(label, rect.x, rect.y + 8, rect.width, "center")
+end
+
 local function drawRefrigeratorWindow()
     if not ui.isRefrigeratorOpen then
         return
@@ -4891,6 +5008,7 @@ function cookingUi.drawWindow()
 end
 
 local function drawUiLayer()
+    ui.drawWindowViewPrompt()
     drawRefrigeratorOpenPrompt()
     statusUi.drawButton()
     drawBackpackButton()
