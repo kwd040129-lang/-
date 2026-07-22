@@ -170,6 +170,9 @@ local backgroundLibrary = {
         height = 158,
         centerX = 0,
         y = 186,
+        transitionCameraX = nil,
+        lockCameraToEntry = false,
+        entryAwaitRelease = false,
         characterStartY = 0,
         characterTargetY = 0,
         characterVisibleFrame = 3
@@ -731,7 +734,14 @@ local function updateCamera(dt, snap)
 
     if currentOrientation == "portrait" or backgroundLibrary.location == "surface" then
         local bounds = getCharacterVisualBounds()
-        targetX = bounds.footX
+        local hatch = backgroundLibrary.surfaceHatch
+        if backgroundLibrary.location == "surface"
+            and hatch.lockCameraToEntry
+            and hatch.transitionCameraX then
+            targetX = hatch.transitionCameraX
+        else
+            targetX = bounds.footX
+        end
         if currentOrientation == "portrait" then
             targetY = bounds.y + bounds.height * 0.48
         end
@@ -2442,9 +2452,16 @@ function ui.loadSurfaceHatch()
     return true
 end
 
-function ui.startSurfaceHatchOpening()
+function ui.startSurfaceHatchOpening(entryScreenX)
     local hatch = backgroundLibrary.surfaceHatch
-    hatch.centerX = roomWorldWidth * 0.5
+    local tileWidth = roomWorldWidth / backgroundLibrary.surfaceTileCount
+    local safeScreenX = clamp(entryScreenX or virtualWidth * 0.5,
+        hatch.width * 0.5 + 12, virtualWidth - hatch.width * 0.5 - 12)
+    hatch.centerX = tileWidth + safeScreenX
+    hatch.transitionCameraX = hatch.centerX
+        - (safeScreenX - virtualWidth * 0.5) / camera.zoom
+    hatch.lockCameraToEntry = true
+    hatch.entryAwaitRelease = true
     hatch.y = roomWorldHeight * 0.415
     hatch.frame = 1
     hatch.timer = 0
@@ -2545,6 +2562,8 @@ function ui.finishSurfaceHatchDescent()
     hatch.isVisible = false
     hatch.isOpening = false
     hatch.isDescending = false
+    hatch.lockCameraToEntry = false
+    hatch.entryAwaitRelease = false
 
     placedFurniture = backgroundLibrary.basementFurniture or {}
     droppedFoodItems = backgroundLibrary.basementDroppedFood or {}
@@ -2846,6 +2865,12 @@ function ui.startLadderClimb(item)
 end
 
 function ui.finishLadderClimb()
+    local entryScreenX = virtualWidth * 0.5
+    if ui.climbingLadderItem then
+        local ladderBounds = getFurnitureVisualBounds(ui.climbingLadderItem)
+        entryScreenX = (ladderBounds.footX - camera.x) * camera.zoom + virtualWidth * 0.5
+    end
+
     ui.isClimbingLadder = false
     ui.isAutoDescendingLadder = false
     ui.climbingLadderItem = nil
@@ -2862,7 +2887,7 @@ function ui.finishLadderClimb()
     loadRoomBackground(backgroundLibrary.surfacePath)
     floorArea.topRatio = 0.52
     refreshWorldAfterBackgroundChange()
-    ui.startSurfaceHatchOpening()
+    ui.startSurfaceHatchOpening(entryScreenX)
     local hatch = backgroundLibrary.surfaceHatch
     character.x = hatch.centerX - character.width * 0.5
     hatch.characterTargetY = hatch.y + hatch.height * 0.78 - character.height
@@ -4139,6 +4164,20 @@ function love.update(dt)
     local moveX, moveY = getKeyboardMoveVector()
     local targetMoveX = 0
     local targetMoveY = 0
+
+    if backgroundLibrary.location == "surface" and backgroundLibrary.surfaceHatch.lockCameraToEntry then
+        local hatch = backgroundLibrary.surfaceHatch
+        if hatch.entryAwaitRelease then
+            if moveX == 0 and moveY == 0 then
+                hatch.entryAwaitRelease = false
+            else
+                moveX = 0
+                moveY = 0
+            end
+        elseif moveX ~= 0 or moveY ~= 0 or character.isMovingToTarget or character.isDragging then
+            hatch.lockCameraToEntry = false
+        end
+    end
 
     if ui.ladderReentryLocked and moveX == 0 and moveY == 0 then
         ui.ladderReentryLocked = false
