@@ -153,7 +153,26 @@ local windowViews = {
 local backgroundLibrary = {
     folder = "room_backgrounds",
     location = "basement",
-    surfacePath = "locations/surface_grassland.png",
+    surfacePath = "locations/surface_grassland_seamless_v2.png",
+    surfaceTileCount = 3,
+    surfaceHatch = {
+        path = "locations/hatch_opening_sheet_chroma.png",
+        image = nil,
+        quads = {},
+        frameCount = 6,
+        frame = 1,
+        timer = 0,
+        frameTime = 0.12,
+        isOpening = false,
+        isVisible = false,
+        width = 176,
+        height = 158,
+        centerX = 0,
+        y = 186,
+        characterStartY = 0,
+        characterTargetY = 0,
+        characterVisibleFrame = 3
+    },
     basementFurniture = nil,
     basementDroppedFood = nil,
     activePath = nil,
@@ -464,7 +483,8 @@ local floorArea = {
         ["room_backgrounds/KakaoTalk_20260710_012611856_03.png"] = 0.445,
         ["room_backgrounds/KakaoTalk_20260710_012611856_04.png"] = 0.485,
         ["room_backgrounds/KakaoTalk_20260710_012611856_05.png"] = 0.505,
-        ["locations/surface_grassland.png"] = 0.520
+        ["locations/surface_grassland.png"] = 0.520,
+        ["locations/surface_grassland_seamless_v2.png"] = 0.520
     }
 }
 
@@ -548,9 +568,10 @@ local function updateRoomWorldSize()
     -- 달라지고, 세로 전환 시 clamp가 실제 좌표까지 변경하게 됩니다.
     roomWorldHeight = ORIENTATION.landscape.height
     if backgroundLibrary.location == "surface" and roomBackgroundImage then
+        local singleTileWidth = roomWorldHeight * roomBackgroundImage:getWidth() / roomBackgroundImage:getHeight()
         roomWorldWidth = math.max(
             ORIENTATION.landscape.width,
-            roomWorldHeight * roomBackgroundImage:getWidth() / roomBackgroundImage:getHeight()
+            singleTileWidth * backgroundLibrary.surfaceTileCount
         )
     else
         roomWorldWidth = ORIENTATION.landscape.width
@@ -2384,6 +2405,81 @@ local function loadRoomBackground(backgroundPath)
     end
 end
 
+function ui.loadSurfaceHatch()
+    local hatch = backgroundLibrary.surfaceHatch
+    hatch.image = nil
+    hatch.quads = {}
+
+    if not love.filesystem.getInfo(hatch.path) then
+        return false
+    end
+
+    local success, imageOrError = pcall(love.graphics.newImage, hatch.path)
+    if not success then
+        return false
+    end
+
+    hatch.image = imageOrError
+    hatch.image:setFilter("linear", "linear")
+    local imageWidth = hatch.image:getWidth()
+    local imageHeight = hatch.image:getHeight()
+    for frameIndex = 1, hatch.frameCount do
+        local frameX = math.floor((frameIndex - 1) * imageWidth / hatch.frameCount)
+        local nextFrameX = math.floor(frameIndex * imageWidth / hatch.frameCount)
+        hatch.quads[frameIndex] = love.graphics.newQuad(
+            frameX,
+            0,
+            nextFrameX - frameX,
+            imageHeight,
+            imageWidth,
+            imageHeight
+        )
+    end
+
+    return true
+end
+
+function ui.startSurfaceHatchOpening()
+    local hatch = backgroundLibrary.surfaceHatch
+    hatch.centerX = roomWorldWidth * 0.5
+    hatch.y = roomWorldHeight * 0.415
+    hatch.frame = 1
+    hatch.timer = 0
+    hatch.isVisible = true
+    hatch.isOpening = true
+end
+
+function ui.updateSurfaceHatch(dt)
+    local hatch = backgroundLibrary.surfaceHatch
+    if backgroundLibrary.location ~= "surface" or not hatch.isOpening then
+        return false
+    end
+
+    hatch.timer = hatch.timer + dt
+    while hatch.timer >= hatch.frameTime and hatch.frame < hatch.frameCount do
+        hatch.timer = hatch.timer - hatch.frameTime
+        hatch.frame = hatch.frame + 1
+    end
+
+    local emergeRatio = clamp((hatch.frame - hatch.characterVisibleFrame)
+        / math.max(1, hatch.frameCount - hatch.characterVisibleFrame), 0, 1)
+    emergeRatio = emergeRatio * emergeRatio * (3 - 2 * emergeRatio)
+    character.y = hatch.characterStartY
+        + (hatch.characterTargetY - hatch.characterStartY) * emergeRatio
+
+    if hatch.frame >= hatch.frameCount and hatch.timer >= hatch.frameTime then
+        hatch.timer = 0
+        hatch.isOpening = false
+        character.y = hatch.characterTargetY
+        sprite.isMovingByKeyboard = false
+        sprite.movementAxis = nil
+        setCurrentAnimation("front")
+        sprite.currentFrame = 1
+    end
+
+    return hatch.isOpening
+end
+
 local function refreshWorldAfterBackgroundChange()
     updateRoomWorldSize()
     clampCharacterToVirtualScreen()
@@ -2645,14 +2741,18 @@ function ui.finishLadderClimb()
     loadRoomBackground(backgroundLibrary.surfacePath)
     floorArea.topRatio = 0.52
     refreshWorldAfterBackgroundChange()
-    character.x = roomWorldWidth * 0.5 - character.width * 0.5
-    character.y = roomWorldHeight - character.height
+    ui.startSurfaceHatchOpening()
+    local hatch = backgroundLibrary.surfaceHatch
+    character.x = hatch.centerX - character.width * 0.5
+    hatch.characterTargetY = hatch.y + hatch.height * 0.78 - character.height
+    hatch.characterStartY = hatch.characterTargetY + 42
+    character.y = hatch.characterStartY
     character.stairLift = 0
     character.fallTargetY = nil
     character.isLanded = true
     sprite.isMovingByKeyboard = false
     sprite.movementAxis = nil
-    setCurrentAnimation("front")
+    setCurrentAnimation("back")
     clampCharacterToVirtualScreen()
     updateCamera(0, true)
 end
@@ -3359,6 +3459,7 @@ function love.load()
     loadWindowViews()
     loadBackgroundLibrary()
     loadRoomBackground()
+    ui.loadSurfaceHatch()
     loadChromaKeyShader()
 
     -- 현재 창 크기에 맞게 레터박스 스케일을 계산합니다.
@@ -3795,6 +3896,11 @@ function love.update(dt)
     updateDroppedFoodItems(dt)
     updateFoodReaction(dt)
 
+    if ui.updateSurfaceHatch(dt) then
+        updateCamera(dt, false)
+        return
+    end
+
     if chat.isBackspaceHeld then
         if not ui.isChatOpen or not love.keyboard.isDown("backspace") or chat.composition ~= "" then
             chat.isBackspaceHeld = false
@@ -4119,6 +4225,15 @@ local function drawRoomBackground()
 
     local imageWidth = roomBackgroundImage:getWidth()
     local imageHeight = roomBackgroundImage:getHeight()
+    if backgroundLibrary.location == "surface" then
+        local backgroundScale = roomWorldHeight / imageHeight
+        local tileWidth = imageWidth * backgroundScale
+        for tileIndex = 0, backgroundLibrary.surfaceTileCount - 1 do
+            love.graphics.draw(roomBackgroundImage, tileIndex * tileWidth, 0, 0, backgroundScale, backgroundScale)
+        end
+        return
+    end
+
     local backgroundScale = math.max(roomWorldWidth / imageWidth, roomWorldHeight / imageHeight)
     local drawWidth = imageWidth * backgroundScale
     local drawHeight = imageHeight * backgroundScale
@@ -4126,6 +4241,31 @@ local function drawRoomBackground()
     local drawY = (roomWorldHeight - drawHeight) * 0.5
 
     love.graphics.draw(roomBackgroundImage, drawX, drawY, 0, backgroundScale, backgroundScale)
+end
+
+function ui.drawSurfaceHatch()
+    local hatch = backgroundLibrary.surfaceHatch
+    if backgroundLibrary.location ~= "surface"
+        or not hatch.isVisible
+        or not hatch.image
+        or not hatch.quads[hatch.frame] then
+        return
+    end
+
+    local quad = hatch.quads[hatch.frame]
+    local _, _, frameWidth, frameHeight = quad:getViewport()
+    local drawX = hatch.centerX - hatch.width * 0.5
+    local scaleX = hatch.width / frameWidth
+    local scaleY = hatch.height / frameHeight
+
+    if chromaKeyShaderReady then
+        love.graphics.setShader(chromaKeyShader)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(hatch.image, quad, drawX, hatch.y, 0, scaleX, scaleY)
+    if chromaKeyShaderReady then
+        love.graphics.setShader()
+    end
 end
 
 -- 캐릭터가 바닥에 붙어 있다는 느낌을 주는 그림자입니다. 멀어질수록 작고 연해집니다.
@@ -4286,8 +4426,13 @@ local function drawSortedWorldObjects()
     local drawItems = {}
     local characterBounds = getCharacterVisualBounds()
     local characterDepthY = (stairAction.active or stairAction.onTop) and math.huge or characterBounds.footY
+    local hideCharacterForHatch = backgroundLibrary.location == "surface"
+        and backgroundLibrary.surfaceHatch.isOpening
+        and backgroundLibrary.surfaceHatch.frame < backgroundLibrary.surfaceHatch.characterVisibleFrame
 
-    if character.isDragging then
+    if hideCharacterForHatch then
+        -- The character is still below the closed hatch during the first frames.
+    elseif character.isDragging then
         table.insert(drawItems, {
             kind = "character_shadow",
             depthY = character.dragShadowFootY
@@ -5287,6 +5432,7 @@ local function drawVirtualGame()
     love.graphics.translate(-camera.x, -camera.y)
 
     drawRoomBackground()
+    ui.drawSurfaceHatch()
     drawFloorDebugLine()
     drawSortedWorldObjects()
 
