@@ -171,6 +171,7 @@ local backgroundLibrary = {
         centerX = 0,
         y = 186,
         transitionCameraX = nil,
+        followCameraOffsetX = nil,
         lockCameraToEntry = false,
         entryAwaitRelease = false,
         characterStartY = 0,
@@ -739,6 +740,8 @@ local function updateCamera(dt, snap)
             and hatch.lockCameraToEntry
             and hatch.transitionCameraX then
             targetX = hatch.transitionCameraX
+        elseif backgroundLibrary.location == "surface" and hatch.followCameraOffsetX then
+            targetX = bounds.footX + hatch.followCameraOffsetX
         else
             targetX = bounds.footX
         end
@@ -2460,6 +2463,7 @@ function ui.startSurfaceHatchOpening(entryScreenX)
     hatch.centerX = tileWidth + safeScreenX
     hatch.transitionCameraX = hatch.centerX
         - (safeScreenX - virtualWidth * 0.5) / camera.zoom
+    hatch.followCameraOffsetX = hatch.transitionCameraX - hatch.centerX
     hatch.lockCameraToEntry = true
     hatch.entryAwaitRelease = true
     hatch.y = roomWorldHeight * 0.415
@@ -2564,6 +2568,7 @@ function ui.finishSurfaceHatchDescent()
     hatch.isDescending = false
     hatch.lockCameraToEntry = false
     hatch.entryAwaitRelease = false
+    hatch.followCameraOffsetX = nil
 
     placedFurniture = backgroundLibrary.basementFurniture or {}
     droppedFoodItems = backgroundLibrary.basementDroppedFood or {}
