@@ -3776,10 +3776,13 @@ function love.update(dt)
     end
 
     -- 계단 오르기 입력이 아니라고 확인된 뒤에만 발판 상태를 해제합니다.
-    if (moveX ~= 0 or moveY ~= 0) and stairAction.onTop then
-        character.stairLift = 0
-        stairAction.onTop = false
-        character.fallTargetY = nil
+    if (intendedMoveX ~= 0 or intendedMoveY ~= 0) and stairAction.onTop then
+        moveX = 0
+        moveY = 0
+        targetMoveX = 0
+        targetMoveY = 0
+        character.isMovingToTarget = false
+        character.movePath = nil
     end
 
     sprite.isMovingByKeyboard = moveX ~= 0 or moveY ~= 0 or targetMoveX ~= 0 or targetMoveY ~= 0
