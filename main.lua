@@ -4433,41 +4433,20 @@ function ui.drawSurfaceHatch()
         return
     end
 
+    local quad = hatch.quads[hatch.frame]
+    local _, _, frameWidth, frameHeight = quad:getViewport()
     local drawX = hatch.centerX - hatch.width * 0.5
-    local nextFrame = hatch.frame
-    if hatch.isOpening then
-        nextFrame = math.min(hatch.frameCount, hatch.frame + 1)
-    elseif hatch.isDescending then
-        nextFrame = math.max(1, hatch.frame - 1)
-    end
-
-    local blend = 0
-    if nextFrame ~= hatch.frame and hatch.frameTime > 0 then
-        blend = clamp(hatch.timer / hatch.frameTime, 0, 1)
-        blend = blend * blend * (3 - 2 * blend)
-    end
-
-    local function drawHatchFrame(frameIndex, alpha)
-        if alpha <= 0 then
-            return
-        end
-        local quad = hatch.quads[frameIndex]
-        local _, _, frameWidth, frameHeight = quad:getViewport()
-        local scaleX = hatch.width / frameWidth
-        local scaleY = hatch.height / frameHeight
-        love.graphics.setColor(1, 1, 1, alpha)
-        love.graphics.draw(hatch.image, quad, drawX, hatch.y, 0, scaleX, scaleY)
-    end
+    local scaleX = hatch.width / frameWidth
+    local scaleY = hatch.height / frameHeight
 
     if chromaKeyShaderReady then
         love.graphics.setShader(chromaKeyShader)
     end
-    drawHatchFrame(hatch.frame, 1 - blend)
-    drawHatchFrame(nextFrame, blend)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(hatch.image, quad, drawX, hatch.y, 0, scaleX, scaleY)
     if chromaKeyShaderReady then
         love.graphics.setShader()
     end
-    love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- 캐릭터가 바닥에 붙어 있다는 느낌을 주는 그림자입니다. 멀어질수록 작고 연해집니다.
