@@ -194,6 +194,8 @@ local ui = {
     isViewingWindow = false,
     viewingWindowItem = nil,
     isClimbingLadder = false,
+    isAutoDescendingLadder = false,
+    ladderReentryLocked = false,
     climbingLadderItem = nil,
     ladderClimbProgress = 0,
     ladderClimbStartFootY = 0,
@@ -2570,6 +2572,8 @@ function ui.finishSurfaceHatchDescent()
 
     if ladder then
         ui.isClimbingLadder = true
+        ui.isAutoDescendingLadder = true
+        ui.ladderReentryLocked = true
         ui.climbingLadderItem = ladder
         ui.ladderClimbProgress = 1
         character.x = ui.ladderClimbTargetX
@@ -2580,6 +2584,7 @@ function ui.finishSurfaceHatchDescent()
         setCurrentAnimation("back")
     else
         ui.isClimbingLadder = false
+        ui.isAutoDescendingLadder = false
         ui.climbingLadderItem = nil
         character.x = roomWorldWidth * 0.5 - character.width * 0.5
         character.y = roomWorldHeight - character.height
@@ -2795,7 +2800,8 @@ function ui.getNearbyLadder()
     if backgroundLibrary.location ~= "basement"
         or character.isDragging
         or stairAction.active
-        or stairAction.onTop then
+        or stairAction.onTop
+        or ui.ladderReentryLocked then
         return nil
     end
 
@@ -2822,6 +2828,7 @@ function ui.startLadderClimb(item)
     local characterBounds = getCharacterVisualBounds()
     ui.ladderClimbDepthScale = characterBounds.scale
     ui.isClimbingLadder = true
+    ui.isAutoDescendingLadder = false
     ui.climbingLadderItem = item
     ui.ladderClimbProgress = 0
     ui.ladderClimbStartFootY = characterBounds.groundFootY
@@ -2873,7 +2880,9 @@ end
 function ui.updateLadderClimb(dt)
     local _, moveY = getKeyboardMoveVector()
     local climbDirection = 0
-    if moveY < -0.20 then
+    if ui.isAutoDescendingLadder then
+        climbDirection = -1
+    elseif moveY < -0.20 then
         climbDirection = 1
     elseif moveY > 0.20 then
         climbDirection = -1
@@ -2909,6 +2918,7 @@ function ui.updateLadderClimb(dt)
         return
     elseif ui.ladderClimbProgress <= 0 and climbDirection < 0 then
         ui.isClimbingLadder = false
+        ui.isAutoDescendingLadder = false
         ui.climbingLadderItem = nil
         character.fallTargetY = nil
         sprite.isMovingByKeyboard = false
@@ -4130,6 +4140,10 @@ function love.update(dt)
     local moveX, moveY = getKeyboardMoveVector()
     local targetMoveX = 0
     local targetMoveY = 0
+
+    if ui.ladderReentryLocked and moveX == 0 and moveY == 0 then
+        ui.ladderReentryLocked = false
+    end
 
     if moveY < -0.35 then
         local ladder = ui.getNearbyLadder()
