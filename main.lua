@@ -2847,6 +2847,7 @@ end
 
 function ui.finishLadderClimb()
     ui.isClimbingLadder = false
+    ui.isAutoDescendingLadder = false
     ui.climbingLadderItem = nil
     backgroundLibrary.basementFurniture = placedFurniture
     backgroundLibrary.basementDroppedFood = droppedFoodItems
@@ -2880,14 +2881,7 @@ end
 function ui.updateLadderClimb(dt)
     local _, moveY = getKeyboardMoveVector()
     local climbDirection = 0
-    if ui.isAutoDescendingLadder then
-        -- Returning from the surface is player-controlled: hold the forward/down
-        -- direction to descend and release it to pause. Upward reversal stays
-        -- locked until the character reaches the basement floor.
-        if moveY > 0.20 then
-            climbDirection = -1
-        end
-    elseif moveY < -0.20 then
+    if moveY < -0.20 then
         climbDirection = 1
     elseif moveY > 0.20 then
         climbDirection = -1
@@ -2918,7 +2912,7 @@ function ui.updateLadderClimb(dt)
         sprite.currentFrame = 1
     end
 
-    if ui.ladderClimbProgress >= 1 then
+    if ui.ladderClimbProgress >= 1 and climbDirection > 0 then
         ui.finishLadderClimb()
         return
     elseif ui.ladderClimbProgress <= 0 and climbDirection < 0 then
