@@ -362,7 +362,9 @@ local chat = {
     threadErrorShown = false,
     thread = nil,
     requestChannel = nil,
-    responseChannel = nil
+    responseChannel = nil,
+    userMemoryFileName = "user_memory.json",
+    userSummary = ""
 }
 
 local koreanUiFont = nil
@@ -3272,6 +3274,44 @@ local function decodeJsonStringField(json, fieldName)
     return nil
 end
 
+function chat.escapeJsonString(value)
+    return value:gsub("\\", "\\\\")
+        :gsub('"', '\\"')
+        :gsub("\b", "\\b")
+        :gsub("\f", "\\f")
+        :gsub("\n", "\\n")
+        :gsub("\r", "\\r")
+        :gsub("\t", "\\t")
+end
+
+function chat.saveUserMemory()
+    local contents = '{"user_summary": "' .. chat.escapeJsonString(chat.userSummary or "") .. '"}'
+    return love.filesystem.write(chat.userMemoryFileName, contents)
+end
+
+function chat.loadUserMemory()
+    chat.userSummary = ""
+
+    if not love.filesystem.getInfo(chat.userMemoryFileName) then
+        chat.saveUserMemory()
+        return
+    end
+
+    local contents = love.filesystem.read(chat.userMemoryFileName)
+    local savedSummary = contents and decodeJsonStringField(contents, "user_summary")
+    if savedSummary == nil then
+        chat.saveUserMemory()
+        return
+    end
+
+    chat.userSummary = savedSummary
+end
+
+function chat.setUserSummary(summary)
+    chat.userSummary = type(summary) == "string" and summary or ""
+    return chat.saveUserMemory()
+end
+
 local function addChatMessage(role, text)
     table.insert(chat.messages, {role = role, text = text})
     chat.scrollY = 0
@@ -3369,7 +3409,10 @@ local function sendChatMessage()
     chat.input = ""
     chat.composition = ""
     chat.isSending = true
-    chat.requestChannel:push(message)
+    chat.requestChannel:push({
+        message = message,
+        user_summary = chat.userSummary or ""
+    })
 end
 
 local function pollChatResponse()
@@ -3711,6 +3754,7 @@ local function loadKoreanUiFont()
 end
 
 function love.load()
+    chat.loadUserMemory()
     chat.requestChannel = love.thread.getChannel("chat_requests")
     chat.responseChannel = love.thread.getChannel("chat_responses")
     chat.requestChannel:clear()

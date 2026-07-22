@@ -49,7 +49,9 @@ const apiKey = process.env.GEMINI_API_KEY;
 const client = apiKey ? new GoogleGenAI({ apiKey }) : null;
 let cachedContentName = null;
 let cachedContentExpiresAt = 0;
+let cachedSystemInstruction = null;
 let cacheCreationPromise = null;
+let cacheCreationSystemInstruction = null;
 let nextCacheRetryAt = 0;
 
 function addToHistory(role, text) {
@@ -59,10 +61,15 @@ function addToHistory(role, text) {
   }
 }
 
-async function getCachedContentName() {
+function buildSystemInstruction(userSummary) {
+  return `User Context: ${userSummary}\n\n${momoSystemPrompt}`;
+}
+
+async function getCachedContentName(systemInstruction) {
   const now = Date.now();
   if (
     cachedContentName &&
+    cachedSystemInstruction === systemInstruction &&
     now < cachedContentExpiresAt - cacheRefreshMarginMs
   ) {
     return cachedContentName;
@@ -72,12 +79,21 @@ async function getCachedContentName() {
     return null;
   }
 
+  if (
+    cacheCreationPromise &&
+    cacheCreationSystemInstruction !== systemInstruction
+  ) {
+    await cacheCreationPromise;
+    return getCachedContentName(systemInstruction);
+  }
+
   if (!cacheCreationPromise) {
+    cacheCreationSystemInstruction = systemInstruction;
     cacheCreationPromise = client.caches.create({
       model,
       config: {
         displayName: "momo-character-rules",
-        systemInstruction: momoSystemPrompt,
+        systemInstruction,
         ttl: `${cacheTtlSeconds}s`
       }
     }).then((cache) => {
@@ -86,6 +102,7 @@ async function getCachedContentName() {
       }
 
       cachedContentName = cache.name;
+      cachedSystemInstruction = systemInstruction;
       cachedContentExpiresAt = cache.expireTime
         ? Date.parse(cache.expireTime)
         : Date.now() + cacheTtlSeconds * 1000;
@@ -95,6 +112,7 @@ async function getCachedContentName() {
     }).catch((error) => {
       cachedContentName = null;
       cachedContentExpiresAt = 0;
+      cachedSystemInstruction = null;
       nextCacheRetryAt = Date.now() + cacheRetryDelayMs;
       console.warn(
         "Gemini context cache unavailable; using direct system instruction:",
@@ -103,6 +121,7 @@ async function getCachedContentName() {
       return null;
     }).finally(() => {
       cacheCreationPromise = null;
+      cacheCreationSystemInstruction = null;
     });
   }
 
@@ -118,6 +137,7 @@ app.get("/", (_request, response) => {
 
 app.post("/chat", async (request, response) => {
   const message = request.body?.message;
+  const userSummary = request.body?.user_summary;
 
   if (typeof message !== "string" || message.trim().length === 0) {
     return response.status(400).json({
@@ -131,6 +151,19 @@ app.post("/chat", async (request, response) => {
     });
   }
 
+
+  if (userSummary !== undefined && typeof userSummary !== "string") {
+    return response.status(400).json({
+      error: "user_summary must be a string"
+    });
+  }
+
+  if (typeof userSummary === "string" && userSummary.length > 4000) {
+    return response.status(413).json({
+      error: "user_summary must be 4000 characters or fewer"
+    });
+  }
+
   if (!client) {
     console.error("GEMINI_API_KEY is not configured");
     return response.status(503).json({
@@ -140,7 +173,9 @@ app.post("/chat", async (request, response) => {
 
   try {
     const trimmedMessage = message.trim();
-    const cachedContent = await getCachedContentName();
+    const normalizedUserSummary = userSummary?.trim() || "";
+    const systemInstruction = buildSystemInstruction(normalizedUserSummary);
+    const cachedContent = await getCachedContentName(systemInstruction);
     const contents = [
       ...history,
       { role: "user", parts: [{ text: trimmedMessage }] }
@@ -149,7 +184,7 @@ app.post("/chat", async (request, response) => {
       maxOutputTokens: 500,
       ...(cachedContent
         ? { cachedContent }
-        : { systemInstruction: momoSystemPrompt })
+        : { systemInstruction })
     };
 
     const result = await client.models.generateContent({

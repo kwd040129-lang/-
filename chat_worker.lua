@@ -55,17 +55,23 @@ local function runCurlWithoutWindow(command)
 end
 
 while true do
-    local message = requestChannel:demand()
+    local request = requestChannel:demand()
 
-    if message == "__quit__" then
+    if request == "__quit__" then
         break
     end
+
+    local message = type(request) == "table" and request.message or request
+    local userSummary = type(request) == "table" and request.user_summary or ""
+    message = type(message) == "string" and message or ""
+    userSummary = type(userSummary) == "string" and userSummary or ""
 
     local requestName = "chat_request.json"
     local responseName = "chat_response.json"
     local requestPath = love.filesystem.getSaveDirectory() .. "/" .. requestName
     local responsePath = love.filesystem.getSaveDirectory() .. "/" .. responseName
-    local requestBody = '{"message":"' .. escapeJsonString(message) .. '"}'
+    local requestBody = '{"message":"' .. escapeJsonString(message)
+        .. '","user_summary":"' .. escapeJsonString(userSummary) .. '"}'
     love.filesystem.write(requestName, requestBody)
     love.filesystem.remove(responseName)
 
