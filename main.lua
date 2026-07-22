@@ -166,6 +166,7 @@ local ui = {
     isRefrigeratorOpen = false,
     isBackpackOpen = false,
     isStatusOpen = false,
+    isCookingOpen = false,
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
     isBackgroundListDragging = false,
@@ -190,6 +191,7 @@ local petStatus = {
     affection = 60
 }
 local statusUi = {}
+local cookingUi = {}
 
 local backpackStorage = {
     columns = 5,
@@ -342,6 +344,23 @@ local furnitureLibrary = {
             -- 조금 넓혀야 몸통이 이미지 안에 반쯤 들어간 뒤 막히지 않습니다.
             collisionInsetX = -0.16,
             collisionTopPadding = 0.62,
+            collisionBottomPadding = 0.02,
+            blocksMovement = true,
+            renderBehind = false
+        },
+        {
+            id = "cooking_counter",
+            label = "Cooking Counter",
+            fileName = "furniture/cooking_counter.png",
+            image = nil,
+            isLoaded = false,
+            width = 210,
+            height = 210,
+            minDepthScale = 0.64,
+            maxDepthScale = 0.92,
+            visualHeightScale = 1.0,
+            collisionInsetX = 0.05,
+            collisionTopPadding = 0.68,
             collisionBottomPadding = 0.02,
             blocksMovement = true,
             renderBehind = false
@@ -1329,6 +1348,63 @@ end
 
 function statusUi.close()
     ui.isStatusOpen = false
+end
+
+function cookingUi.getWindowRect()
+    local width = math.min(520, virtualWidth - 30)
+    local height = math.min(370, virtualHeight - 36)
+    return {
+        x = (virtualWidth - width) * 0.5,
+        y = (virtualHeight - height) * 0.5,
+        width = width,
+        height = height
+    }
+end
+
+function cookingUi.getCloseRect()
+    local rect = cookingUi.getWindowRect()
+    return {
+        x = rect.x + rect.width - 44,
+        y = rect.y + 14,
+        width = 30,
+        height = 30
+    }
+end
+
+function cookingUi.findCounterBurnerAt(x, y)
+    for index = #placedFurniture, 1, -1 do
+        local item = placedFurniture[index]
+        if item.id == "cooking_counter" then
+            local bounds = getFurnitureVisualBounds(item)
+            local burnerX = bounds.x + bounds.width * 0.08
+            local burnerY = bounds.y + bounds.height * 0.06
+            local burnerWidth = bounds.width * 0.84
+            local burnerHeight = bounds.height * 0.30
+            if x >= burnerX and x <= burnerX + burnerWidth
+                and y >= burnerY and y <= burnerY + burnerHeight then
+                return item
+            end
+        end
+    end
+    return nil
+end
+
+function cookingUi.open()
+    ui.isCookingOpen = true
+    ui.isStatusOpen = false
+    ui.isBackpackOpen = false
+    ui.isRefrigeratorOpen = false
+    ui.isMenuOpen = false
+    character.isMovingToTarget = false
+    character.movePath = nil
+    sprite.isMovingByKeyboard = false
+    furnitureDrag.item = nil
+    furnitureEdit.selectedItem = nil
+    furnitureEdit.isSizing = false
+end
+
+function cookingUi.close()
+    ui.isCookingOpen = false
 end
 
 local function getFurnitureDeleteButtonRect(item)
@@ -2734,6 +2810,13 @@ local function closeInteriorWindow(shouldApply)
 end
 
 local function handleUiMousePressed(virtualX, virtualY)
+    if ui.isCookingOpen then
+        if isPointInsideRect(virtualX, virtualY, cookingUi.getCloseRect()) then
+            cookingUi.close()
+        end
+        return true
+    end
+
     if ui.isStatusOpen then
         if isPointInsideRect(virtualX, virtualY, statusUi.getCloseRect()) then
             statusUi.close()
@@ -2986,6 +3069,13 @@ end
 
 -- 키보드를 눌렀을 때 실행됩니다.
 function love.keypressed(key)
+    if ui.isCookingOpen then
+        if key == "escape" then
+            cookingUi.close()
+        end
+        return
+    end
+
     if ui.isStatusOpen then
         if key == "escape" then
             statusUi.close()
@@ -3079,6 +3169,11 @@ function love.mousepressed(windowX, windowY, button)
         local pointerX, pointerY = windowToWorld(windowX, windowY)
 
         if handleUiMousePressed(viewX, viewY) then
+            return
+        end
+
+        if cookingUi.findCounterBurnerAt(pointerX, pointerY) then
+            cookingUi.open()
             return
         end
 
@@ -3382,6 +3477,10 @@ function love.update(dt)
     end
 
     if ui.isStatusOpen then
+        return
+    end
+
+    if ui.isCookingOpen then
         return
     end
 
@@ -4634,6 +4733,76 @@ function statusUi.drawWindow()
     end
 end
 
+function cookingUi.drawWindow()
+    if not ui.isCookingOpen then
+        return
+    end
+
+    local rect = cookingUi.getWindowRect()
+    local closeRect = cookingUi.getCloseRect()
+    local contentY = rect.y + 72
+    local contentHeight = rect.height - 132
+    local padding = 22
+    local gap = 14
+    local leftWidth = math.floor((rect.width - padding * 2 - gap) * 0.44)
+    local rightX = rect.x + padding + leftWidth + gap
+    local rightWidth = rect.width - padding * 2 - gap - leftWidth
+
+    love.graphics.setColor(0, 0, 0, 0.50)
+    love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 12,
+        {0.99, 0.95, 0.88, 0.99}, {0.48, 0.29, 0.16, 0.58})
+
+    love.graphics.setColor(0.30, 0.18, 0.10, 1)
+    love.graphics.print("요리하기", rect.x + 22, rect.y + 20)
+    love.graphics.setColor(0.58, 0.39, 0.24, 0.90)
+    love.graphics.print("조리대", rect.x + 22, rect.y + 45)
+
+    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 7,
+        {0.94, 0.82, 0.67, 0.98}, {0.45, 0.27, 0.15, 0.45})
+    love.graphics.setColor(0.36, 0.21, 0.12, 1)
+    love.graphics.printf("X", closeRect.x, closeRect.y + 7, closeRect.width, "center")
+
+    drawRoundedPanel(rect.x + padding, contentY, leftWidth, contentHeight, 9,
+        {0.93, 0.87, 0.76, 0.88}, {0.47, 0.31, 0.19, 0.45})
+    love.graphics.setColor(0.34, 0.22, 0.14, 1)
+    love.graphics.print("레시피", rect.x + padding + 14, contentY + 13)
+    love.graphics.setColor(0.51, 0.42, 0.34, 0.90)
+    love.graphics.printf("등록된 레시피가\n없습니다.",
+        rect.x + padding + 12, contentY + contentHeight * 0.45,
+        leftWidth - 24, "center")
+
+    drawRoundedPanel(rightX, contentY, rightWidth, contentHeight, 9,
+        {0.98, 0.91, 0.82, 0.92}, {0.49, 0.30, 0.18, 0.42})
+    love.graphics.setColor(0.34, 0.22, 0.14, 1)
+    love.graphics.print("필요한 식재료", rightX + 14, contentY + 13)
+
+    local slotGap = 8
+    local slotSize = math.floor(math.min(54, (rightWidth - 28 - slotGap * 2) / 3))
+    local slotsWidth = slotSize * 3 + slotGap * 2
+    local slotsX = rightX + (rightWidth - slotsWidth) * 0.5
+    local slotsY = contentY + 50
+    for row = 1, 2 do
+        for column = 1, 3 do
+            local slotX = slotsX + (column - 1) * (slotSize + slotGap)
+            local slotY = slotsY + (row - 1) * (slotSize + slotGap)
+            drawRoundedPanel(slotX, slotY, slotSize, slotSize, 6,
+                {0.79, 0.68, 0.51, 0.70}, {0.42, 0.27, 0.15, 0.52})
+        end
+    end
+
+    local cookButton = {
+        x = rightX + 14,
+        y = contentY + contentHeight - 46,
+        width = rightWidth - 28,
+        height = 34
+    }
+    drawRoundedPanel(cookButton.x, cookButton.y, cookButton.width, cookButton.height, 8,
+        {0.57, 0.52, 0.48, 0.42}, {0.37, 0.30, 0.26, 0.28})
+    love.graphics.setColor(0.45, 0.40, 0.37, 0.72)
+    love.graphics.printf("요리하기", cookButton.x, cookButton.y + 8, cookButton.width, "center")
+end
+
 local function drawUiLayer()
     drawRefrigeratorOpenPrompt()
     statusUi.drawButton()
@@ -4645,6 +4814,7 @@ local function drawUiLayer()
     drawRefrigeratorWindow()
     drawBackpackWindow()
     statusUi.drawWindow()
+    cookingUi.drawWindow()
 end
 
 local function drawFloorDebugLine()
