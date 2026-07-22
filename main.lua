@@ -1691,6 +1691,11 @@ local function startStairClimb(item)
     stairAction.elapsed = 0
     stairAction.landingElapsed = 0
     stairAction.waypoints = {
+        [0] = {
+            x = approachX,
+            lift = 0,
+            surfaceY = floorFootY
+        },
         {
             x = firstStepX,
             lift = math.max(0, floorFootY - geometry.lowStandY),
@@ -1729,6 +1734,20 @@ local function tryStartAutomaticStairClimb(moveX, moveY)
             and moveX * climbDirection > 0.35 then
             stairAction.active = true
             beginStairHop(2)
+            return true
+        elseif stairAction.stepIndex == 2
+            and stairAction.item
+            and not stairAction.awaitRelease
+            and moveX * climbDirection < -0.35 then
+            stairAction.active = true
+            beginStairHop(1)
+            return true
+        elseif stairAction.stepIndex == 1
+            and stairAction.item
+            and not stairAction.awaitRelease
+            and moveX * climbDirection < -0.35 then
+            stairAction.active = true
+            beginStairHop(0)
             return true
         end
 
@@ -1831,7 +1850,15 @@ local function updateStairAction(dt)
 
         stairAction.landingElapsed = stairAction.landingElapsed + dt
         if stairAction.landingElapsed >= stairAction.landingDuration then
-            if stairAction.stepIndex == 1 then
+            if stairAction.stepIndex == 0 then
+                stairAction.active = false
+                stairAction.phase = nil
+                stairAction.onTop = false
+                stairAction.awaitRelease = true
+                stairAction.item = nil
+                character.stairLift = 0
+                character.fallTargetY = nil
+            elseif stairAction.stepIndex == 1 then
                 -- 첫 단에서는 자동으로 다음 단을 오르지 않습니다. 이동키를
                 -- 놓았다가 계단 방향으로 다시 눌러야 두 번째 점프를 시작합니다.
                 stairAction.active = false
