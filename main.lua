@@ -1822,7 +1822,11 @@ local function updateStairAction(dt)
             + (waypoint.lift - stairAction.startLift) * smoothRatio
             + arcHeight
         sprite.isMovingByKeyboard = false
-        setCurrentAnimation("front")
+        if waypoint.x > stairAction.startX then
+            setCurrentAnimation("right")
+        elseif waypoint.x < stairAction.startX then
+            setCurrentAnimation("left")
+        end
         sprite.currentFrame = 1
 
         if ratio >= 1 then
@@ -1837,7 +1841,11 @@ local function updateStairAction(dt)
             character.isLanded = true
             character.fallTargetY = character.y
             sprite.isMovingByKeyboard = false
-            setCurrentAnimation("front")
+            if waypoint.x > stairAction.startX then
+                setCurrentAnimation("right")
+            elseif waypoint.x < stairAction.startX then
+                setCurrentAnimation("left")
+            end
         end
     elseif stairAction.phase == "land" then
         local waypoint = stairAction.waypoints[stairAction.stepIndex]
@@ -1846,7 +1854,11 @@ local function updateStairAction(dt)
         character.isLanded = true
         character.fallTargetY = character.y
         sprite.isMovingByKeyboard = false
-        setCurrentAnimation("front")
+        if waypoint.x > stairAction.startX then
+            setCurrentAnimation("right")
+        elseif waypoint.x < stairAction.startX then
+            setCurrentAnimation("left")
+        end
 
         stairAction.landingElapsed = stairAction.landingElapsed + dt
         if stairAction.landingElapsed >= stairAction.landingDuration then
