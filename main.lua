@@ -170,7 +170,13 @@ local ui = {
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
     isBackgroundListDragging = false,
-    backgroundDragLastX = 0
+    backgroundDragLastX = 0,
+    furnitureScrollY = 0,
+    isFurnitureListDragging = false,
+    furnitureDragLastY = 0,
+    furnitureDragDistance = 0,
+    furnitureDragMoved = false,
+    furniturePendingIndex = nil
 }
 
 local refrigeratorStorage = {
@@ -2593,10 +2599,23 @@ local function getBackgroundItemLayout()
 end
 
 local function getFurnitureItemLayout()
+    local listRect = getBackgroundListRect()
+    local columns = 3
+    local gap = 12
+    local padding = 14
+    local width = math.floor((listRect.width - padding * 2 - gap * (columns - 1)) / columns)
+    local height = 132
+    local rows = math.ceil(#furnitureLibrary.items / columns)
+    local contentHeight = padding * 2 + rows * height + math.max(0, rows - 1) * gap
     return {
-        width = 130,
-        height = 132,
-        gap = 12
+        width = width,
+        height = height,
+        gap = gap,
+        padding = padding,
+        columns = columns,
+        rows = rows,
+        contentHeight = contentHeight,
+        maxScroll = math.max(0, contentHeight - listRect.height)
     }
 end
 
@@ -2806,6 +2825,10 @@ local function closeInteriorWindow(shouldApply)
     end
 
     clampAllFurnitureToRoom()
+    ui.isFurnitureListDragging = false
+    ui.furniturePendingIndex = nil
+    ui.furnitureDragDistance = 0
+    ui.furnitureDragMoved = false
     ui.isInteriorOpen = false
 end
 
@@ -2908,12 +2931,14 @@ local function handleUiMousePressed(virtualX, virtualY)
 
         if isPointInsideRect(virtualX, virtualY, backgroundButtonRect) then
             ui.activeInteriorTab = "backgrounds"
+            ui.isFurnitureListDragging = false
             return true
         end
 
         if isPointInsideRect(virtualX, virtualY, furnitureButtonRect) then
             ui.activeInteriorTab = "furniture"
             ui.isBackgroundListDragging = false
+            ui.furnitureScrollY = clamp(ui.furnitureScrollY, 0, getFurnitureItemLayout().maxScroll)
             return true
         end
 
@@ -2937,20 +2962,25 @@ local function handleUiMousePressed(virtualX, virtualY)
         if ui.activeInteriorTab == "furniture" and isPointInsideRect(virtualX, virtualY, listRect) then
             local layout = getFurnitureItemLayout()
             local localX = virtualX - listRect.x
-            local localY = virtualY - listRect.y
-            local itemStep = layout.width + layout.gap
-            local index = math.floor((localX - 14) / itemStep) + 1
-            local itemX = 14 + (index - 1) * itemStep
-            local itemY = 14
+            local localY = virtualY - listRect.y + ui.furnitureScrollY
+            local column = math.floor((localX - layout.padding) / (layout.width + layout.gap)) + 1
+            local row = math.floor((localY - layout.padding) / (layout.height + layout.gap)) + 1
+            local index = (row - 1) * layout.columns + column
+            local itemX = layout.padding + (column - 1) * (layout.width + layout.gap)
+            local itemY = layout.padding + (row - 1) * (layout.height + layout.gap)
 
-            if furnitureLibrary.items[index]
-                and localX >= itemX
-                and localX <= itemX + layout.width
-                and localY >= itemY
-                and localY <= itemY + layout.height then
-                furnitureLibrary.selectedIndex = index
-                furnitureEdit.selectedItem = addFurnitureToRoom(furnitureLibrary.items[index])
-                furnitureEdit.isSizing = furnitureEdit.selectedItem ~= nil
+            ui.isFurnitureListDragging = true
+            ui.furnitureDragLastY = virtualY
+            ui.furnitureDragDistance = 0
+            ui.furnitureDragMoved = false
+            ui.furniturePendingIndex = nil
+
+            if column >= 1 and column <= layout.columns
+                and row >= 1 and row <= layout.rows
+                and furnitureLibrary.items[index]
+                and localX >= itemX and localX <= itemX + layout.width
+                and localY >= itemY and localY <= itemY + layout.height then
+                ui.furniturePendingIndex = index
             end
 
             return true
@@ -3283,6 +3313,22 @@ end
 
 -- 마우스 버튼에서 손을 뗐을 때 실행됩니다.
 function love.mousereleased(windowX, windowY, button)
+    if button == 1 and ui.isFurnitureListDragging then
+        local pendingIndex = ui.furniturePendingIndex
+        local shouldSelect = not ui.furnitureDragMoved and pendingIndex ~= nil
+        ui.isFurnitureListDragging = false
+        ui.furniturePendingIndex = nil
+        ui.furnitureDragDistance = 0
+        ui.furnitureDragMoved = false
+
+        if shouldSelect and furnitureLibrary.items[pendingIndex] then
+            furnitureLibrary.selectedIndex = pendingIndex
+            furnitureEdit.selectedItem = addFurnitureToRoom(furnitureLibrary.items[pendingIndex])
+            furnitureEdit.isSizing = furnitureEdit.selectedItem ~= nil
+        end
+        return
+    end
+
     if button == 1 and refrigeratorTransferDrag.active then
         local viewX, viewY = windowToVirtual(windowX, windowY)
         local targetStorageName, targetIndex = getTransferSlotAt(viewX, viewY)
@@ -3365,6 +3411,20 @@ function love.touchpressed(id, windowX, windowY, dx, dy, pressure)
 end
 
 function love.mousemoved(windowX, windowY, dx, dy)
+    if ui.isInteriorOpen and ui.isFurnitureListDragging then
+        local _, viewY = windowToVirtual(windowX, windowY)
+        local dragDelta = viewY - ui.furnitureDragLastY
+        ui.furnitureDragDistance = ui.furnitureDragDistance + math.abs(dragDelta)
+        if ui.furnitureDragDistance > 6 then
+            ui.furnitureDragMoved = true
+        end
+        ui.furnitureScrollY = ui.furnitureScrollY - dragDelta
+        ui.furnitureDragLastY = viewY
+        local layout = getFurnitureItemLayout()
+        ui.furnitureScrollY = clamp(ui.furnitureScrollY, 0, layout.maxScroll)
+        return
+    end
+
     if refrigeratorTransferDrag.active then
         refrigeratorTransferDrag.x, refrigeratorTransferDrag.y = windowToVirtual(windowX, windowY)
         return
@@ -3406,6 +3466,9 @@ function love.wheelmoved(x, y)
     elseif ui.isInteriorOpen and ui.activeInteriorTab == "backgrounds" then
         ui.backgroundScrollX = ui.backgroundScrollX - y * 48 - x * 48
         clampBackgroundScroll()
+    elseif ui.isInteriorOpen and ui.activeInteriorTab == "furniture" then
+        local layout = getFurnitureItemLayout()
+        ui.furnitureScrollY = clamp(ui.furnitureScrollY - y * 52, 0, layout.maxScroll)
     end
 end
 
@@ -4443,30 +4506,54 @@ end
 local function drawFurniturePanel()
     local listRect = getBackgroundListRect()
     local layout = getFurnitureItemLayout()
+    ui.furnitureScrollY = clamp(ui.furnitureScrollY, 0, layout.maxScroll)
 
     drawRoundedPanel(listRect.x, listRect.y, listRect.width, listRect.height, 8, {0.10, 0.09, 0.09, 0.10}, {0.35, 0.22, 0.14, 0.14})
 
+    love.graphics.stencil(function()
+        love.graphics.rectangle("fill", listRect.x, listRect.y, listRect.width, listRect.height, 8, 8)
+    end, "replace", 1)
+    love.graphics.setStencilTest("greater", 0)
+
     for index, item in ipairs(furnitureLibrary.items) do
-        local itemX = listRect.x + 14 + (index - 1) * (layout.width + layout.gap)
-        local itemY = listRect.y + 14
+        local column = (index - 1) % layout.columns
+        local row = math.floor((index - 1) / layout.columns)
+        local itemX = listRect.x + layout.padding + column * (layout.width + layout.gap)
+        local itemY = listRect.y + layout.padding + row * (layout.height + layout.gap) - ui.furnitureScrollY
         local isSelected = index == furnitureLibrary.selectedIndex
         local borderColor = isSelected and {0.98, 0.55, 0.52, 0.95} or {1, 1, 1, 0.25}
 
-        drawRoundedPanel(itemX, itemY, layout.width, layout.height, 8, {1, 1, 1, 0.72}, borderColor)
+        if itemY + layout.height >= listRect.y and itemY <= listRect.y + listRect.height then
+            drawRoundedPanel(itemX, itemY, layout.width, layout.height, 8, {1, 1, 1, 0.72}, borderColor)
 
-        local useChromaKey = item.id == "window" and chromaKeyShaderReady
-        if useChromaKey then
-            love.graphics.setShader(chromaKeyShader)
+            local useChromaKey = item.id == "window" and chromaKeyShaderReady
+            if useChromaKey then
+                love.graphics.setShader(chromaKeyShader)
+            end
+
+            drawImageContained(item.image, itemX + 8, itemY + 8, layout.width - 16, layout.height - 46)
+
+            if useChromaKey then
+                love.graphics.setShader()
+            end
+
+            love.graphics.setColor(0.14, 0.10, 0.08, 1)
+            love.graphics.printf(item.label, itemX + 8, itemY + layout.height - 36, layout.width - 16, "center")
         end
+    end
 
-        drawImageContained(item.image, itemX + 8, itemY + 8, layout.width - 16, layout.height - 40)
+    love.graphics.setStencilTest()
 
-        if useChromaKey then
-            love.graphics.setShader()
-        end
-
-        love.graphics.setColor(0.14, 0.10, 0.08, 1)
-        love.graphics.printf(item.label, itemX + 8, itemY + layout.height - 26, layout.width - 16, "center")
+    if layout.maxScroll > 0 then
+        local trackX = listRect.x + listRect.width - 9
+        local trackY = listRect.y + 10
+        local trackHeight = listRect.height - 20
+        local thumbHeight = math.max(34, trackHeight * (listRect.height / layout.contentHeight))
+        local thumbY = trackY + (trackHeight - thumbHeight) * (ui.furnitureScrollY / layout.maxScroll)
+        love.graphics.setColor(0.20, 0.14, 0.10, 0.16)
+        love.graphics.rectangle("fill", trackX, trackY, 4, trackHeight, 2, 2)
+        love.graphics.setColor(0.95, 0.53, 0.50, 0.92)
+        love.graphics.rectangle("fill", trackX - 1, thumbY, 6, thumbHeight, 3, 3)
     end
 end
 
