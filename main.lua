@@ -2881,7 +2881,12 @@ function ui.updateLadderClimb(dt)
     local _, moveY = getKeyboardMoveVector()
     local climbDirection = 0
     if ui.isAutoDescendingLadder then
-        climbDirection = -1
+        -- Returning from the surface is player-controlled: hold the forward/down
+        -- direction to descend and release it to pause. Upward reversal stays
+        -- locked until the character reaches the basement floor.
+        if moveY > 0.20 then
+            climbDirection = -1
+        end
     elseif moveY < -0.20 then
         climbDirection = 1
     elseif moveY > 0.20 then
