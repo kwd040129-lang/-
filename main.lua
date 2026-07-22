@@ -387,6 +387,22 @@ local furnitureLibrary = {
             collisionInsetX = 0.04,
             blocksMovement = true,
             renderBehind = false
+        },
+        {
+            id = "ladder",
+            label = "Ladder",
+            fileName = "furniture/ladder.png",
+            image = nil,
+            isLoaded = false,
+            width = 63,
+            height = 181,
+            minDepthScale = 1.0,
+            maxDepthScale = 1.0,
+            visualHeightScale = 1.0,
+            defaultY = 0,
+            wallMounted = true,
+            blocksMovement = false,
+            renderBehind = true
         }
     }
 }
