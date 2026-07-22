@@ -394,8 +394,9 @@ local furnitureLibrary = {
             fileName = "furniture/ladder.png",
             image = nil,
             isLoaded = false,
-            width = 63,
+            width = 78,
             height = 181,
+            fixedHeight = 181,
             minDepthScale = 1.0,
             maxDepthScale = 1.0,
             visualHeightScale = 1.0,
@@ -1547,7 +1548,8 @@ local function setFurnitureWidth(item, newWidth)
     item.width = clamp(newWidth, furnitureEdit.minWidth, furnitureEdit.maxWidth)
 
     if item.image then
-        item.height = item.width * item.image:getHeight() / item.image:getWidth()
+        item.height = item.fixedHeight
+            or (item.width * item.image:getHeight() / item.image:getWidth())
     end
 
     item.x = footX - item.width * 0.5
@@ -1602,6 +1604,7 @@ local function addFurnitureToRoom(libraryItem)
         if item.id == libraryItem.id then
             item.width = libraryItem.width
             item.height = libraryItem.height
+            item.fixedHeight = libraryItem.fixedHeight
             item.minDepthScale = libraryItem.minDepthScale
             item.maxDepthScale = libraryItem.maxDepthScale
             item.visualHeightScale = libraryItem.visualHeightScale
@@ -1624,6 +1627,7 @@ local function addFurnitureToRoom(libraryItem)
         y = libraryItem.defaultY or (roomWorldHeight - libraryItem.height),
         width = libraryItem.width,
         height = libraryItem.height,
+        fixedHeight = libraryItem.fixedHeight,
         minDepthScale = libraryItem.minDepthScale,
         maxDepthScale = libraryItem.maxDepthScale,
         visualHeightScale = libraryItem.visualHeightScale,
@@ -2284,7 +2288,8 @@ local function loadFurnitureLibrary()
             if success then
                 item.image = imageOrError
                 item.image:setFilter("linear", "linear")
-                item.height = item.width * item.image:getHeight() / item.image:getWidth()
+                item.height = item.fixedHeight
+                    or (item.width * item.image:getHeight() / item.image:getWidth())
                 item.isLoaded = true
             end
         end
