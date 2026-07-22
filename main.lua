@@ -180,6 +180,30 @@ local backgroundLibrary = {
     },
     basementFurniture = nil,
     basementDroppedFood = nil,
+    surfaceBuildings = {},
+    buildingSelectedIndex = 1,
+    buildingItems = {
+        {
+            id = "japanese_shop",
+            label = "Japanese Shop",
+            fileName = "locations/japanese_tile_shop_front_v2.png",
+            image = nil,
+            isLoaded = false,
+            width = 420,
+            height = 280,
+            fixedHeight = 280,
+            defaultY = 72,
+            minDepthScale = 1.0,
+            maxDepthScale = 1.0,
+            visualHeightScale = 1.0,
+            collisionInsetX = 0.08,
+            collisionTopPadding = 0.70,
+            collisionBottomPadding = 0.02,
+            blocksMovement = true,
+            renderBehind = true,
+            isBuilding = true
+        }
+    },
     activePath = nil,
     previewPath = nil,
     loadedPath = nil,
@@ -190,6 +214,7 @@ local backgroundLibrary = {
 local ui = {
     isMenuOpen = false,
     isInteriorOpen = false,
+    isBuildingOpen = false,
     isChatOpen = false,
     isRefrigeratorOpen = false,
     isBackpackOpen = false,
@@ -1674,6 +1699,7 @@ local function addFurnitureToRoom(libraryItem)
             item.wallMounted = libraryItem.wallMounted
             item.blocksMovement = libraryItem.blocksMovement
             item.renderBehind = libraryItem.renderBehind
+            item.isBuilding = libraryItem.isBuilding
             clampFurnitureToRoom(item)
             return item
         end
@@ -1697,6 +1723,7 @@ local function addFurnitureToRoom(libraryItem)
         wallMounted = libraryItem.wallMounted,
         blocksMovement = libraryItem.blocksMovement,
         renderBehind = libraryItem.renderBehind,
+        isBuilding = libraryItem.isBuilding,
         flipX = false
     }
 
@@ -2356,6 +2383,23 @@ local function loadFurnitureLibrary()
     end
 end
 
+function ui.loadBuildingLibrary()
+    for _, item in ipairs(backgroundLibrary.buildingItems) do
+        item.image = nil
+        item.isLoaded = false
+        if love.filesystem.getInfo(item.fileName) then
+            local success, imageOrError = pcall(love.graphics.newImage, item.fileName)
+            if success then
+                item.image = imageOrError
+                item.image:setFilter("linear", "linear")
+                item.height = item.fixedHeight
+                    or (item.width * item.image:getHeight() / item.image:getWidth())
+                item.isLoaded = true
+            end
+        end
+    end
+end
+
 local function loadBackpackItems()
     for _, item in ipairs(backpackStorage.slots) do
         item.image = nil
@@ -2570,6 +2614,7 @@ function ui.finishSurfaceHatchDescent()
     hatch.entryAwaitRelease = false
     hatch.followCameraOffsetX = nil
 
+    backgroundLibrary.surfaceBuildings = placedFurniture
     placedFurniture = backgroundLibrary.basementFurniture or {}
     droppedFoodItems = backgroundLibrary.basementDroppedFood or {}
     backgroundLibrary.location = "basement"
@@ -2881,7 +2926,7 @@ function ui.finishLadderClimb()
     ui.climbingLadderItem = nil
     backgroundLibrary.basementFurniture = placedFurniture
     backgroundLibrary.basementDroppedFood = droppedFoodItems
-    placedFurniture = {}
+    placedFurniture = backgroundLibrary.surfaceBuildings or {}
     droppedFoodItems = {}
     worldFoodDrag.item = nil
     furnitureDrag.item = nil
@@ -3008,6 +3053,24 @@ local function getChatButtonRect()
         y = 114,
         width = 132,
         height = 42
+    }
+end
+
+function ui.getBuildingButtonRect()
+    return {
+        x = virtualWidth - 150,
+        y = 162,
+        width = 132,
+        height = 42
+    }
+end
+
+function ui.getBuildingWindowRect()
+    return {
+        x = 28,
+        y = 54,
+        width = virtualWidth - 56,
+        height = virtualHeight - 108
     }
 end
 
@@ -3332,6 +3395,10 @@ local function pollChatResponse()
 end
 
 local function openInteriorWindow()
+    if backgroundLibrary.location ~= "basement" then
+        ui.isMenuOpen = false
+        return
+    end
     closeChatWindow()
     ui.isMenuOpen = false
     ui.isInteriorOpen = true
@@ -3345,6 +3412,23 @@ local function openInteriorWindow()
             break
         end
     end
+end
+
+function ui.openBuildingWindow()
+    if backgroundLibrary.location ~= "surface" then
+        ui.isMenuOpen = false
+        return
+    end
+    closeChatWindow()
+    ui.isInteriorOpen = false
+    ui.isMenuOpen = false
+    ui.isBuildingOpen = true
+end
+
+function ui.closeBuildingWindow()
+    ui.isBuildingOpen = false
+    backgroundLibrary.surfaceBuildings = placedFurniture
+    clampAllFurnitureToRoom()
 end
 
 local function closeInteriorWindow(shouldApply)
@@ -3421,6 +3505,29 @@ local function handleUiMousePressed(virtualX, virtualY)
             chat.scrollY = 0
         elseif isPointInsideRect(virtualX, virtualY, getChatSendRect()) then
             sendChatMessage()
+        end
+        return true
+    end
+
+    if ui.isBuildingOpen then
+        local rect = ui.getBuildingWindowRect()
+        local closeRect = {x = rect.x + rect.width - 40, y = rect.y + 16, width = 24, height = 24}
+        local confirmRect = {x = rect.x + rect.width - 116, y = rect.y + rect.height - 54, width = 92, height = 34}
+        local cardRect = {x = rect.x + 34, y = rect.y + 76, width = 220, height = 178}
+
+        if isPointInsideRect(virtualX, virtualY, closeRect)
+            or isPointInsideRect(virtualX, virtualY, confirmRect) then
+            ui.closeBuildingWindow()
+            return true
+        end
+
+        if isPointInsideRect(virtualX, virtualY, cardRect) then
+            local item = backgroundLibrary.buildingItems[1]
+            backgroundLibrary.buildingSelectedIndex = 1
+            furnitureEdit.selectedItem = addFurnitureToRoom(item)
+            furnitureEdit.isSizing = furnitureEdit.selectedItem ~= nil
+            backgroundLibrary.surfaceBuildings = placedFurniture
+            return true
         end
         return true
     end
@@ -3552,10 +3659,16 @@ local function handleUiMousePressed(virtualX, virtualY)
 
     if ui.isMenuOpen then
         if isPointInsideRect(virtualX, virtualY, getInteriorButtonRect()) then
-            openInteriorWindow()
+            if backgroundLibrary.location == "basement" then
+                openInteriorWindow()
+            end
             return true
         elseif isPointInsideRect(virtualX, virtualY, getChatButtonRect()) then
             openChatWindow()
+            return true
+        elseif backgroundLibrary.location == "surface"
+            and isPointInsideRect(virtualX, virtualY, ui.getBuildingButtonRect()) then
+            ui.openBuildingWindow()
             return true
         end
 
@@ -3609,6 +3722,7 @@ function love.load()
     -- 좌우 스프라이트 이미지와 셰이더를 먼저 준비합니다.
     loadAllAnimations()
     loadFurnitureLibrary()
+    ui.loadBuildingLibrary()
     loadBackpackItems()
     loadWindowViews()
     loadBackgroundLibrary()
@@ -3638,6 +3752,13 @@ end
 
 -- 키보드를 눌렀을 때 실행됩니다.
 function love.keypressed(key)
+    if ui.isBuildingOpen then
+        if key == "escape" then
+            ui.closeBuildingWindow()
+        end
+        return
+    end
+
     if ui.isCookingOpen then
         if key == "escape" then
             cookingUi.close()
@@ -4095,6 +4216,10 @@ function love.update(dt)
         return
     end
 
+    if ui.isBuildingOpen then
+        return
+    end
+
     if ui.isViewingWindow then
         local viewableWindow = ui.getViewableWindow()
         local viewMoveX, viewMoveY = getKeyboardMoveVector()
@@ -4148,6 +4273,7 @@ function love.update(dt)
         end
     elseif love.mouse.isDown(1)
         and not ui.isInteriorOpen
+        and not ui.isBuildingOpen
         and not character.isDragging
         and not worldFoodDrag.item then
         local windowX, windowY = love.mouse.getPosition()
@@ -4782,15 +4908,25 @@ local function drawDropdownMenu()
 
     local rect = getInteriorButtonRect()
     local chatRect = getChatButtonRect()
+    local isSurface = backgroundLibrary.location == "surface"
 
-    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8, {0.97, 0.93, 0.86, 0.94}, {0.35, 0.22, 0.14, 0.35})
+    local interiorFill = isSurface and {0.66, 0.64, 0.61, 0.76} or {0.97, 0.93, 0.86, 0.94}
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8, interiorFill, {0.35, 0.22, 0.14, 0.35})
 
-    love.graphics.setColor(0.18, 0.12, 0.09, 1)
+    love.graphics.setColor(0.18, 0.12, 0.09, isSurface and 0.42 or 1)
     love.graphics.printf("Interior", rect.x, rect.y + 12, rect.width, "center")
 
     drawRoundedPanel(chatRect.x, chatRect.y, chatRect.width, chatRect.height, 8, {0.97, 0.93, 0.86, 0.94}, {0.35, 0.22, 0.14, 0.35})
     love.graphics.setColor(0.18, 0.12, 0.09, 1)
     love.graphics.printf("Chat", chatRect.x, chatRect.y + 12, chatRect.width, "center")
+
+    if isSurface then
+        local buildingRect = ui.getBuildingButtonRect()
+        drawRoundedPanel(buildingRect.x, buildingRect.y, buildingRect.width, buildingRect.height, 8,
+            {0.95, 0.82, 0.72, 0.96}, {0.35, 0.22, 0.14, 0.35})
+        love.graphics.setColor(0.18, 0.12, 0.09, 1)
+        love.graphics.printf("Buildings", buildingRect.x, buildingRect.y + 12, buildingRect.width, "center")
+    end
 end
 
 local function getSingleLineTextTail(text, maxWidth)
@@ -5266,6 +5402,45 @@ local function drawInteriorWindow()
     love.graphics.printf("OK", confirmRect.x, confirmRect.y + 9, confirmRect.width, "center")
 end
 
+function ui.drawBuildingWindow()
+    if not ui.isBuildingOpen then
+        return
+    end
+
+    local rect = ui.getBuildingWindowRect()
+    local closeRect = {x = rect.x + rect.width - 40, y = rect.y + 16, width = 24, height = 24}
+    local confirmRect = {x = rect.x + rect.width - 116, y = rect.y + rect.height - 54, width = 92, height = 34}
+    local cardRect = {x = rect.x + 34, y = rect.y + 76, width = 220, height = 178}
+    local item = backgroundLibrary.buildingItems[1]
+
+    love.graphics.setColor(0, 0, 0, 0.38)
+    love.graphics.rectangle("fill", 0, 0, virtualWidth, virtualHeight)
+    drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 10,
+        {0.98, 0.94, 0.88, 0.97}, {0.38, 0.23, 0.13, 0.35})
+    love.graphics.setColor(0.17, 0.10, 0.08, 1)
+    love.graphics.print("Buildings", rect.x + 24, rect.y + 20)
+
+    drawRoundedPanel(closeRect.x, closeRect.y, closeRect.width, closeRect.height, 6,
+        {0.18, 0.13, 0.11, 0.12}, {0.18, 0.13, 0.11, 0.18})
+    love.graphics.setColor(0.18, 0.10, 0.08, 1)
+    love.graphics.printf("X", closeRect.x, closeRect.y + 4, closeRect.width, "center")
+
+    drawRoundedPanel(cardRect.x, cardRect.y, cardRect.width, cardRect.height, 9,
+        {1, 1, 1, 0.76}, {0.95, 0.53, 0.50, 0.90})
+    drawImageContained(item.image, cardRect.x + 10, cardRect.y + 8, cardRect.width - 20, cardRect.height - 48)
+    love.graphics.setColor(0.17, 0.10, 0.08, 1)
+    love.graphics.printf(item.label, cardRect.x + 8, cardRect.y + cardRect.height - 32,
+        cardRect.width - 16, "center")
+
+    drawRoundedPanel(confirmRect.x, confirmRect.y, confirmRect.width, confirmRect.height, 7,
+        {0.95, 0.53, 0.50, 0.95}, {0.46, 0.16, 0.14, 0.34})
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.printf("OK", confirmRect.x, confirmRect.y + 9, confirmRect.width, "center")
+    love.graphics.setColor(0.35, 0.24, 0.17, 0.68)
+    love.graphics.print("Select a building, then move and resize it on the surface.",
+        rect.x + 280, rect.y + 104)
+end
+
 local function drawRefrigeratorOpenPrompt()
     if ui.isRefrigeratorOpen or ui.isInteriorOpen or ui.isChatOpen then
         return
@@ -5577,6 +5752,7 @@ local function drawUiLayer()
     drawMenuButton()
     drawDropdownMenu()
     drawInteriorWindow()
+    ui.drawBuildingWindow()
     drawChatWindow()
     drawRefrigeratorWindow()
     drawBackpackWindow()
