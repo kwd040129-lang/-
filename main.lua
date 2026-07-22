@@ -4463,6 +4463,12 @@ local function drawPlacedFurniture()
 end
 
 local function drawCharacterShadow()
+    if ui.isClimbingLadder
+        or backgroundLibrary.surfaceHatch.isOpening
+        or backgroundLibrary.surfaceHatch.isDescending then
+        return
+    end
+
     -- 계단을 오르기 시작한 뒤에는 발판 자체가 캐릭터를 받치므로
     -- 방 바닥용 타원 그림자를 표시하지 않습니다.
     if (stairAction.active and stairAction.phase ~= "approach") or stairAction.onTop then
