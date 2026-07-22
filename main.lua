@@ -152,6 +152,10 @@ local windowViews = {
 
 local backgroundLibrary = {
     folder = "room_backgrounds",
+    location = "basement",
+    shrinePath = "locations/japanese_shrine_day.png",
+    basementFurniture = nil,
+    basementDroppedFood = nil,
     activePath = nil,
     previewPath = nil,
     loadedPath = nil,
@@ -169,6 +173,14 @@ local ui = {
     isCookingOpen = false,
     isViewingWindow = false,
     viewingWindowItem = nil,
+    isClimbingLadder = false,
+    climbingLadderItem = nil,
+    ladderClimbProgress = 0,
+    ladderClimbStartFootY = 0,
+    ladderClimbTargetFootY = 0,
+    ladderClimbStartX = 0,
+    ladderClimbTargetX = 0,
+    ladderClimbDuration = 2.8,
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
     isBackgroundListDragging = false,
@@ -450,7 +462,8 @@ local floorArea = {
         ["room_backgrounds/KakaoTalk_20260710_012611856_02.png"] = 0.440,
         ["room_backgrounds/KakaoTalk_20260710_012611856_03.png"] = 0.445,
         ["room_backgrounds/KakaoTalk_20260710_012611856_04.png"] = 0.485,
-        ["room_backgrounds/KakaoTalk_20260710_012611856_05.png"] = 0.505
+        ["room_backgrounds/KakaoTalk_20260710_012611856_05.png"] = 0.505,
+        ["locations/japanese_shrine_day.png"] = 0.520
     }
 }
 
@@ -2377,7 +2390,9 @@ local function previewRoomBackground(backgroundPath)
 end
 
 local function syncRoomBackground()
-    local targetPath = backgroundLibrary.previewPath or backgroundLibrary.activePath
+    local targetPath = backgroundLibrary.location == "shrine"
+        and backgroundLibrary.shrinePath
+        or (backgroundLibrary.previewPath or backgroundLibrary.activePath)
 
     if backgroundLibrary.loadedPath ~= targetPath then
         loadRoomBackground(targetPath)
@@ -2555,6 +2570,126 @@ local function getKeyboardMoveVector()
     end
 
     return moveX, moveY
+end
+
+function ui.getNearbyLadder()
+    if backgroundLibrary.location ~= "basement"
+        or character.isDragging
+        or stairAction.active
+        or stairAction.onTop then
+        return nil
+    end
+
+    local characterBounds = getCharacterVisualBounds()
+    for _, item in ipairs(placedFurniture) do
+        if item.id == "ladder" then
+            local bounds = getFurnitureVisualBounds(item)
+            local horizontalDistance = math.abs(characterBounds.footX - bounds.footX)
+            local verticalDistance = characterBounds.groundFootY - bounds.footY
+            local horizontalLimit = math.max(28, bounds.width * 0.48)
+            if horizontalDistance <= horizontalLimit
+                and verticalDistance >= -8
+                and verticalDistance <= 48 then
+                return item
+            end
+        end
+    end
+
+    return nil
+end
+
+function ui.startLadderClimb(item)
+    local bounds = getFurnitureVisualBounds(item)
+    local characterBounds = getCharacterVisualBounds()
+    ui.isClimbingLadder = true
+    ui.climbingLadderItem = item
+    ui.ladderClimbProgress = 0
+    ui.ladderClimbStartFootY = characterBounds.groundFootY
+    ui.ladderClimbTargetFootY = bounds.y + 8
+    ui.ladderClimbStartX = character.x
+    ui.ladderClimbTargetX = bounds.footX - character.width * 0.5
+    character.isMovingToTarget = false
+    character.movePath = nil
+    character.isDragging = false
+    character.stairLift = 0
+    character.fallTargetY = character.y
+    sprite.isMovingByKeyboard = false
+    sprite.movementAxis = nil
+    setCurrentAnimation("back")
+end
+
+function ui.finishLadderClimb()
+    ui.isClimbingLadder = false
+    ui.climbingLadderItem = nil
+    backgroundLibrary.basementFurniture = placedFurniture
+    backgroundLibrary.basementDroppedFood = droppedFoodItems
+    placedFurniture = {}
+    droppedFoodItems = {}
+    worldFoodDrag.item = nil
+    furnitureDrag.item = nil
+    furnitureEdit.selectedItem = nil
+    furnitureEdit.isSizing = false
+    backgroundLibrary.location = "shrine"
+    backgroundLibrary.previewPath = backgroundLibrary.activePath
+    loadRoomBackground(backgroundLibrary.shrinePath)
+    floorArea.topRatio = 0.52
+    character.x = roomWorldWidth * 0.5 - character.width * 0.5
+    character.y = roomWorldHeight - character.height
+    character.stairLift = 0
+    character.fallTargetY = nil
+    character.isLanded = true
+    sprite.isMovingByKeyboard = false
+    sprite.movementAxis = nil
+    setCurrentAnimation("front")
+    refreshWorldAfterBackgroundChange()
+end
+
+function ui.updateLadderClimb(dt)
+    local _, moveY = getKeyboardMoveVector()
+    local climbDirection = 0
+    if moveY < -0.20 then
+        climbDirection = 1
+    elseif moveY > 0.20 then
+        climbDirection = -1
+    end
+
+    ui.ladderClimbProgress = clamp(
+        ui.ladderClimbProgress + climbDirection * dt / ui.ladderClimbDuration,
+        0,
+        1
+    )
+
+    local ratio = ui.ladderClimbProgress
+    local footY = ui.ladderClimbStartFootY
+        + (ui.ladderClimbTargetFootY - ui.ladderClimbStartFootY) * ratio
+    character.x = ui.ladderClimbStartX
+        + (ui.ladderClimbTargetX - ui.ladderClimbStartX) * clamp(ratio * 4, 0, 1)
+    character.y = footY - character.height
+    character.stairLift = 0
+    character.isLanded = true
+    character.fallTargetY = character.y
+    character.isMovingToTarget = false
+    sprite.isMovingByKeyboard = climbDirection ~= 0
+    sprite.movementAxis = "vertical"
+    setCurrentAnimation("back")
+    if climbDirection ~= 0 then
+        updateSpriteAnimation(dt)
+    else
+        sprite.currentFrame = 1
+    end
+
+    if ui.ladderClimbProgress >= 1 then
+        ui.finishLadderClimb()
+        return
+    elseif ui.ladderClimbProgress <= 0 and climbDirection < 0 then
+        ui.isClimbingLadder = false
+        ui.climbingLadderItem = nil
+        character.fallTargetY = nil
+        sprite.isMovingByKeyboard = false
+        setCurrentAnimation("front")
+    end
+
+    updateCamera(dt, false)
 end
 
 local function isPointInsideRect(x, y, rect)
@@ -3704,6 +3839,11 @@ function love.update(dt)
         end
     end
 
+    if ui.isClimbingLadder then
+        ui.updateLadderClimb(dt)
+        return
+    end
+
     if updateStairAction(dt) then
         return
     end
@@ -3749,6 +3889,15 @@ function love.update(dt)
     local moveX, moveY = getKeyboardMoveVector()
     local targetMoveX = 0
     local targetMoveY = 0
+
+    if moveY < -0.35 then
+        local ladder = ui.getNearbyLadder()
+        if ladder then
+            ui.startLadderClimb(ladder)
+            ui.updateLadderClimb(dt)
+            return
+        end
+    end
 
     -- 오르기 키를 계속 누르고 있어도 정상에 도착하자마자 바닥으로
     -- 이탈하지 않게, 한 번 키를 놓을 때까지 계단 위 착지를 유지합니다.
