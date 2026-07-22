@@ -153,7 +153,7 @@ local windowViews = {
 local backgroundLibrary = {
     folder = "room_backgrounds",
     location = "basement",
-    shrinePath = "locations/japanese_shrine_day.png",
+    surfacePath = "locations/surface_grassland.png",
     basementFurniture = nil,
     basementDroppedFood = nil,
     activePath = nil,
@@ -464,7 +464,7 @@ local floorArea = {
         ["room_backgrounds/KakaoTalk_20260710_012611856_03.png"] = 0.445,
         ["room_backgrounds/KakaoTalk_20260710_012611856_04.png"] = 0.485,
         ["room_backgrounds/KakaoTalk_20260710_012611856_05.png"] = 0.505,
-        ["locations/japanese_shrine_day.png"] = 0.520
+        ["locations/surface_grassland.png"] = 0.520
     }
 }
 
@@ -546,8 +546,15 @@ local function updateRoomWorldSize()
     -- 가로/세로 모드는 같은 방을 서로 다른 뷰포트로 바라봅니다.
     -- 월드 크기를 방향마다 바꾸면 동일한 가구 Y 좌표의 깊이 비율이
     -- 달라지고, 세로 전환 시 clamp가 실제 좌표까지 변경하게 됩니다.
-    roomWorldWidth = ORIENTATION.landscape.width
     roomWorldHeight = ORIENTATION.landscape.height
+    if backgroundLibrary.location == "surface" and roomBackgroundImage then
+        roomWorldWidth = math.max(
+            ORIENTATION.landscape.width,
+            roomWorldHeight * roomBackgroundImage:getWidth() / roomBackgroundImage:getHeight()
+        )
+    else
+        roomWorldWidth = ORIENTATION.landscape.width
+    end
 end
 
 -- 실제 창 좌표를 현재 모드의 가상 화면 좌표로 변환합니다.
@@ -588,10 +595,6 @@ end
 -- 실제 창 좌표를 카메라가 적용된 월드 좌표로 변환합니다.
 local function windowToWorld(windowX, windowY)
     local virtualX, virtualY = windowToVirtual(windowX, windowY)
-
-    if currentOrientation ~= "portrait" then
-        return virtualX, virtualY
-    end
 
     local worldX = (virtualX - virtualWidth * 0.5) / camera.zoom + camera.x
     local worldY = (virtualY - virtualHeight * 0.5) / camera.zoom + camera.y
@@ -702,10 +705,12 @@ local function updateCamera(dt, snap)
     local targetX = roomWorldWidth * 0.5
     local targetY = roomWorldHeight * 0.5
 
-    if currentOrientation == "portrait" then
+    if currentOrientation == "portrait" or backgroundLibrary.location == "surface" then
         local bounds = getCharacterVisualBounds()
         targetX = bounds.footX
-        targetY = bounds.y + bounds.height * 0.48
+        if currentOrientation == "portrait" then
+            targetY = bounds.y + bounds.height * 0.48
+        end
     end
 
     if snap then
@@ -2395,8 +2400,8 @@ local function previewRoomBackground(backgroundPath)
 end
 
 local function syncRoomBackground()
-    local targetPath = backgroundLibrary.location == "shrine"
-        and backgroundLibrary.shrinePath
+    local targetPath = backgroundLibrary.location == "surface"
+        and backgroundLibrary.surfacePath
         or (backgroundLibrary.previewPath or backgroundLibrary.activePath)
 
     if backgroundLibrary.loadedPath ~= targetPath then
@@ -2635,10 +2640,11 @@ function ui.finishLadderClimb()
     furnitureDrag.item = nil
     furnitureEdit.selectedItem = nil
     furnitureEdit.isSizing = false
-    backgroundLibrary.location = "shrine"
+    backgroundLibrary.location = "surface"
     backgroundLibrary.previewPath = backgroundLibrary.activePath
-    loadRoomBackground(backgroundLibrary.shrinePath)
+    loadRoomBackground(backgroundLibrary.surfacePath)
     floorArea.topRatio = 0.52
+    refreshWorldAfterBackgroundChange()
     character.x = roomWorldWidth * 0.5 - character.width * 0.5
     character.y = roomWorldHeight - character.height
     character.stairLift = 0
@@ -2647,7 +2653,8 @@ function ui.finishLadderClimb()
     sprite.isMovingByKeyboard = false
     sprite.movementAxis = nil
     setCurrentAnimation("front")
-    refreshWorldAfterBackgroundChange()
+    clampCharacterToVirtualScreen()
+    updateCamera(0, true)
 end
 
 function ui.updateLadderClimb(dt)
