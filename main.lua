@@ -164,6 +164,7 @@ local backgroundLibrary = {
         timer = 0,
         frameTime = 0.12,
         isOpening = false,
+        isDescending = false,
         isVisible = false,
         width = 176,
         height = 158,
@@ -2447,15 +2448,37 @@ function ui.startSurfaceHatchOpening()
     hatch.timer = 0
     hatch.isVisible = true
     hatch.isOpening = true
+    hatch.isDescending = false
 end
 
 function ui.updateSurfaceHatch(dt)
     local hatch = backgroundLibrary.surfaceHatch
-    if backgroundLibrary.location ~= "surface" or not hatch.isOpening then
+    if backgroundLibrary.location ~= "surface"
+        or (not hatch.isOpening and not hatch.isDescending) then
         return false
     end
 
     hatch.timer = hatch.timer + dt
+    if hatch.isDescending then
+        while hatch.timer >= hatch.frameTime and hatch.frame > 1 do
+            hatch.timer = hatch.timer - hatch.frameTime
+            hatch.frame = hatch.frame - 1
+        end
+
+        local descendRatio = clamp((hatch.frameCount - hatch.frame)
+            / math.max(1, hatch.frameCount - 1), 0, 1)
+        descendRatio = descendRatio * descendRatio * (3 - 2 * descendRatio)
+        character.y = hatch.characterStartY
+            + (hatch.characterTargetY - hatch.characterStartY) * descendRatio
+
+        if hatch.frame <= 1 and hatch.timer >= hatch.frameTime then
+            hatch.timer = 0
+            hatch.isDescending = false
+            ui.finishSurfaceHatchDescent()
+        end
+        return true
+    end
+
     while hatch.timer >= hatch.frameTime and hatch.frame < hatch.frameCount do
         hatch.timer = hatch.timer - hatch.frameTime
         hatch.frame = hatch.frame + 1
@@ -2478,6 +2501,93 @@ function ui.updateSurfaceHatch(dt)
     end
 
     return hatch.isOpening
+end
+
+function ui.isCharacterNearSurfaceHatch()
+    local hatch = backgroundLibrary.surfaceHatch
+    if backgroundLibrary.location ~= "surface"
+        or hatch.isOpening
+        or hatch.isDescending
+        or not hatch.isVisible
+        or hatch.frame < hatch.frameCount then
+        return false
+    end
+
+    local bounds = getCharacterVisualBounds()
+    local hatchFootY = hatch.y + hatch.height * 0.78
+    return math.abs(bounds.footX - hatch.centerX) <= hatch.width * 0.48
+        and math.abs(bounds.groundFootY - hatchFootY) <= 62
+end
+
+function ui.startSurfaceHatchDescent()
+    local hatch = backgroundLibrary.surfaceHatch
+    hatch.frame = hatch.frameCount
+    hatch.timer = 0
+    hatch.isOpening = false
+    hatch.isDescending = true
+    hatch.characterStartY = character.y
+    hatch.characterTargetY = character.y + 48
+    character.x = hatch.centerX - character.width * 0.5
+    character.isMovingToTarget = false
+    character.movePath = nil
+    character.isDragging = false
+    character.fallTargetY = character.y
+    sprite.isMovingByKeyboard = false
+    sprite.movementAxis = nil
+    setCurrentAnimation("back")
+    sprite.currentFrame = 1
+end
+
+function ui.finishSurfaceHatchDescent()
+    local hatch = backgroundLibrary.surfaceHatch
+    hatch.isVisible = false
+    hatch.isOpening = false
+    hatch.isDescending = false
+
+    placedFurniture = backgroundLibrary.basementFurniture or {}
+    droppedFoodItems = backgroundLibrary.basementDroppedFood or {}
+    backgroundLibrary.location = "basement"
+    backgroundLibrary.previewPath = backgroundLibrary.activePath
+    loadRoomBackground(backgroundLibrary.activePath)
+    applyFloorRatioForBackground(backgroundLibrary.activePath)
+    refreshWorldAfterBackgroundChange()
+
+    worldFoodDrag.item = nil
+    furnitureDrag.item = nil
+    furnitureEdit.selectedItem = nil
+    furnitureEdit.isSizing = false
+
+    local ladder = nil
+    for _, item in ipairs(placedFurniture) do
+        if item.id == "ladder" then
+            ladder = item
+            break
+        end
+    end
+
+    if ladder then
+        ui.isClimbingLadder = true
+        ui.climbingLadderItem = ladder
+        ui.ladderClimbProgress = 1
+        character.x = ui.ladderClimbTargetX
+        character.y = ui.ladderClimbTargetFootY - character.height
+        character.stairLift = 0
+        character.fallTargetY = character.y
+        character.isLanded = true
+        setCurrentAnimation("back")
+    else
+        ui.isClimbingLadder = false
+        ui.climbingLadderItem = nil
+        character.x = roomWorldWidth * 0.5 - character.width * 0.5
+        character.y = roomWorldHeight - character.height
+        character.fallTargetY = nil
+        setCurrentAnimation("front")
+        clampCharacterToVirtualScreen()
+    end
+
+    sprite.isMovingByKeyboard = false
+    sprite.movementAxis = nil
+    updateCamera(0, true)
 end
 
 local function refreshWorldAfterBackgroundChange()
@@ -3958,6 +4068,15 @@ function love.update(dt)
         end
     end
 
+    if backgroundLibrary.location == "surface" then
+        local _, surfaceMoveY = getKeyboardMoveVector()
+        if surfaceMoveY > 0.35 and ui.isCharacterNearSurfaceHatch() then
+            ui.startSurfaceHatchDescent()
+            updateCamera(dt, false)
+            return
+        end
+    end
+
     if ui.isClimbingLadder then
         ui.updateLadderClimb(dt)
         return
@@ -4426,8 +4545,10 @@ local function drawSortedWorldObjects()
     local drawItems = {}
     local characterBounds = getCharacterVisualBounds()
     local characterDepthY = (stairAction.active or stairAction.onTop) and math.huge or characterBounds.footY
+    local hatchTransitionActive = backgroundLibrary.surfaceHatch.isOpening
+        or backgroundLibrary.surfaceHatch.isDescending
     local hideCharacterForHatch = backgroundLibrary.location == "surface"
-        and backgroundLibrary.surfaceHatch.isOpening
+        and hatchTransitionActive
         and backgroundLibrary.surfaceHatch.frame < backgroundLibrary.surfaceHatch.characterVisibleFrame
 
     if hideCharacterForHatch then
