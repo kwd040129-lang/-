@@ -2550,7 +2550,10 @@ function ui.finishSurfaceHatchDescent()
     backgroundLibrary.previewPath = backgroundLibrary.activePath
     loadRoomBackground(backgroundLibrary.activePath)
     applyFloorRatioForBackground(backgroundLibrary.activePath)
-    refreshWorldAfterBackgroundChange()
+    updateRoomWorldSize()
+    clampCharacterToVirtualScreen()
+    clampAllFurnitureToRoom()
+    updateCamera(0, true)
 
     worldFoodDrag.item = nil
     furnitureDrag.item = nil
