@@ -2895,15 +2895,17 @@ function ui.finishLadderClimb()
     ui.startSurfaceHatchOpening(entryScreenX)
     local hatch = backgroundLibrary.surfaceHatch
     character.x = hatch.centerX - character.width * 0.5
-    hatch.characterTargetY = hatch.y + hatch.height * 0.78 - character.height
-    hatch.characterStartY = hatch.characterTargetY + 42
+    -- Begin inside the opening and take only a short step toward the foreground.
+    -- The previous values started in front of the hatch and caused a large depth jump.
+    hatch.characterTargetY = hatch.y + hatch.height * 0.88 - character.height
+    hatch.characterStartY = hatch.characterTargetY - 24
     character.y = hatch.characterStartY
     character.stairLift = 0
     character.fallTargetY = nil
     character.isLanded = true
     sprite.isMovingByKeyboard = false
     sprite.movementAxis = nil
-    setCurrentAnimation("back")
+    setCurrentAnimation("front")
     clampCharacterToVirtualScreen()
     updateCamera(0, true)
 end
