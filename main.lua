@@ -180,6 +180,7 @@ local ui = {
     ladderClimbTargetFootY = 0,
     ladderClimbStartX = 0,
     ladderClimbTargetX = 0,
+    ladderClimbDepthScale = 1,
     ladderClimbDuration = 2.8,
     activeInteriorTab = "backgrounds",
     backgroundScrollX = 0,
@@ -662,6 +663,10 @@ end
 
 -- 2D 화면에서 z좌표처럼 보이도록 깊이에 따라 캐릭터 크기를 계산합니다.
 local function getCharacterDepthScale()
+    if ui.isClimbingLadder then
+        return ui.ladderClimbDepthScale
+    end
+
     local depthRatio = getCharacterDepthRatio()
     return character.minDepthScale
         + (character.maxDepthScale - character.minDepthScale) * depthRatio
@@ -2601,6 +2606,7 @@ end
 function ui.startLadderClimb(item)
     local bounds = getFurnitureVisualBounds(item)
     local characterBounds = getCharacterVisualBounds()
+    ui.ladderClimbDepthScale = characterBounds.scale
     ui.isClimbingLadder = true
     ui.climbingLadderItem = item
     ui.ladderClimbProgress = 0
