@@ -197,7 +197,7 @@ local backgroundLibrary = {
             maxDepthScale = 1.0,
             visualHeightScale = 1.0,
             collisionInsetX = 0.08,
-            collisionTopPadding = 0.70,
+            collisionTopPadding = 0.03,
             collisionBottomPadding = 0.02,
             blocksMovement = true,
             renderBehind = true,
@@ -915,6 +915,15 @@ end
 local function getFurnitureCollisionRect(item)
     local bounds = getFurnitureVisualBounds(item)
     local marginX = bounds.width * (item.collisionInsetX or 0.02)
+
+    if item.isBuilding then
+        local topPadding = bounds.height * 0.03
+        local bottomPadding = bounds.height * 0.02
+        return bounds.x + marginX,
+            bounds.y + topPadding,
+            bounds.width - marginX * 2,
+            bounds.height - topPadding - bottomPadding
+    end
 
     if item.id == "stairs" then
         local geometry = getStairGeometry(item)
