@@ -3059,12 +3059,10 @@ local function handleUiMousePressed(virtualX, virtualY)
 
     if not ui.isInteriorOpen and not ui.isChatOpen then
         local viewableWindow = ui.getViewableWindow()
-        if viewableWindow and isPointInsideRect(virtualX, virtualY, ui.getWindowViewButtonRect(viewableWindow)) then
-            if ui.isViewingWindow then
-                ui.stopWindowViewing()
-            else
-                ui.startWindowViewing(viewableWindow)
-            end
+        if not ui.isViewingWindow
+            and viewableWindow
+            and isPointInsideRect(virtualX, virtualY, ui.getWindowViewButtonRect(viewableWindow)) then
+            ui.startWindowViewing(viewableWindow)
             return true
         end
 
@@ -3278,6 +3276,10 @@ function love.mousepressed(windowX, windowY, button)
 
         if handleUiMousePressed(viewX, viewY) then
             return
+        end
+
+        if ui.isViewingWindow then
+            ui.stopWindowViewing()
         end
 
         if cookingUi.findCounterBurnerAt(pointerX, pointerY) then
@@ -3627,7 +3629,8 @@ function love.update(dt)
 
     if ui.isViewingWindow then
         local viewableWindow = ui.getViewableWindow()
-        if viewableWindow ~= ui.viewingWindowItem then
+        local viewMoveX, viewMoveY = getKeyboardMoveVector()
+        if viewableWindow ~= ui.viewingWindowItem or viewMoveX ~= 0 or viewMoveY ~= 0 then
             ui.stopWindowViewing()
         else
             character.isMovingToTarget = false
@@ -4721,7 +4724,8 @@ local function drawRefrigeratorOpenPrompt()
 end
 
 function ui.drawWindowViewPrompt()
-    if ui.isInteriorOpen
+    if ui.isViewingWindow
+        or ui.isInteriorOpen
         or ui.isChatOpen
         or ui.isRefrigeratorOpen
         or ui.isBackpackOpen
@@ -4739,8 +4743,7 @@ function ui.drawWindowViewPrompt()
     drawRoundedPanel(rect.x, rect.y, rect.width, rect.height, 8,
         {0.91, 0.96, 0.98, 0.97}, {0.28, 0.48, 0.56, 0.52})
     love.graphics.setColor(0.18, 0.31, 0.36, 1)
-    local label = ui.isViewingWindow and "구경 그만하기" or "창밖 구경하기"
-    love.graphics.printf(label, rect.x, rect.y + 8, rect.width, "center")
+    love.graphics.printf("창밖 구경하기", rect.x, rect.y + 8, rect.width, "center")
 end
 
 local function drawRefrigeratorWindow()
